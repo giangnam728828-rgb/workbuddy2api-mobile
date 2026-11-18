@@ -16,6 +16,8 @@
    （抽屉遮罩）是本方案新增的 DOM，桌面端必须完全不出现。它不覆盖任何既有选择器，
    故不影响任何现存样式。 */
 .nav-btn, .nav-veil { display: none; }
+/* 底部标签栏（App 式主导航）：由 mobile.js 注入，桌面端必须完全不渲染。 */
+.tabbar { display: none; }
 @media (max-width: 760px) {
   /* ── 0. 明暗主题跟随面板设置（不再强制深色）────────────────────────
      手机端与桌面端共用同一套主题变量：顶栏主题按钮照常可用，选浅色就是浅色。
@@ -29,6 +31,20 @@
   html[data-theme="light"], html[data-theme="light"] body { color-scheme: only light; }
   /* 基础两行：视口高度链路 + 禁止手机浏览器自动放大字号（避免横向溢出） */
   html, body { height: 100%; -webkit-text-size-adjust: 100%; }
+  /* 横向兜底：任何一处没算准的宽度都不该让整页能左右拖动。
+     用 clip 而不是 hidden —— hidden 会在 html 上建一个滚动容器，把 sticky 顶栏的
+     参照系从视口换成 html，顶栏会跟着内容一起滚出屏幕。老内核不支持就退化为不裁。 */
+  @supports (overflow: clip) {
+    html, body { overflow-x: clip; }
+  }
+  /* 让页面自己吃掉"下拉刷新"手势，避免 WebView 的横向/纵向橡皮筋与自绘刷新冲突 */
+  body { overscroll-behavior: none; }
+
+  /* ── 0.5 App 壳层：单列布局 + 底部标签栏留白 ───────────────────────
+     桌面端是 208px 侧栏 + 主区的两列 grid；手机端侧栏已改成 fixed 抽屉，
+     grid 的第一列必须收掉，否则主区会被挤到右侧 208px 处。 */
+  .shell { display: block; }
+  .main { display: block; }
 
   /* ── 1. 侧栏 → 抽屉 ────────────────────────────────────────────────
      position:fixed + transform（走合成层，不触发重排）；开合由 app.js 切 .open。
@@ -52,8 +68,15 @@
   }
   .nav-veil.on { opacity: 1; pointer-events: auto; }
 
-  /* ── 2. 顶栏：紧凑换行，只隐藏分隔符与副标题（主题按钮保留可用）────── */
-  .topbar { flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px; }
+  /* ── 2. 顶栏：紧凑换行，只隐藏分隔符与副标题（主题按钮保留可用）──────
+     吸顶：App 里滚动长列表时标题/刷新/添加账号必须随手可得，否则要一路滑回顶部。
+     顶部额外让出安全区（刘海/挖孔），底部由 .view 的内边距避开标签栏。 */
+  .topbar {
+    flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    position: sticky; top: 0; z-index: 40;
+    background: var(--surface); border-bottom: 1px solid var(--line-soft);
+  }
   .topbar h2 { font-size: 15px; }
   .topbar .sep, .topbar .meta { display: none; }
   .topbar button { padding: 5px 9px; font-size: 12.5px; border-radius: 8px; }
@@ -214,10 +237,25 @@
   #pkDetail tr > td:nth-child(3), #pkDetail tr > td:nth-child(4),
   #pkDetail tr > td:nth-child(5), #pkDetail tr > td:nth-child(6) { grid-column: span 3; }
 
-  /* ── 4. 弹层 / toast：铺满可用宽度 ───────────────────────────────── */
-  .veil.on { padding: 10px; }
-  .dlg { max-width: 100%; max-height: 92vh; }
-  .dlg header { padding: 14px 14px 11px; }
+  /* ── 4. 弹层 / toast：贴底全宽弹层（action sheet 手感）─────────────
+     桌面端是居中 560px 对话框；手机端改成底部升起、铺满宽度、顶部圆角，
+     拇指自然落在按钮区，且不会因为键盘弹出把对话框顶出可视区。 */
+  .veil.on { padding: 0; align-items: flex-end; }
+  .dlg {
+    width: 100%; max-width: 100%;
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - 8px);
+    border-radius: 18px 18px 0 0; border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: sheetUp .2s cubic-bezier(.32,.72,0,1);
+  }
+  @keyframes sheetUp { from { transform: translateY(14px); opacity: .6; } to { transform: none; opacity: 1; } }
+  /* 顶部小把手：一眼看出这是可下滑关闭的面板（下滑手势本身仍交给页面滚动） */
+  .dlg::before {
+    content: ""; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    width: 38px; height: 4px; border-radius: 2px; background: var(--line); pointer-events: none;
+  }
+  .dlg { position: relative; }
+  .dlg header { padding: 18px 14px 11px; }
   .dlg .body { padding: 14px; }
   .dlg footer { padding: 12px 14px; flex-wrap: wrap; }
   .dlg .tabs { margin: 8px 0 0; }
@@ -227,7 +265,7 @@
   .vc .ft { flex-wrap: wrap; gap: 8px; }
   .vc .ft code { font-size: 13px; letter-spacing: .6px; padding: 6px 9px; }
   .vc .ft .acts { margin-left: 0; }
-  #toasts { left: 12px; right: 12px; bottom: 12px; align-items: stretch; }
+  #toasts { left: 12px; right: 12px; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); align-items: stretch; }
   /* 服务端错误消息里可能夹着长 token/URL，不能只靠 max-width 就把内容裁掉 */
   .tst { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
   /* 弹层内部同样收紧（与卡片台同一密度口径） */
@@ -252,7 +290,8 @@
   legend { font-size: 11px; padding-bottom: 7px; }
 
   /* ── 5. 其余栅格与列表：全部收紧间距，统一 12px 圆角卡片感 ──────── */
-  .view { padding: 10px 10px 40px; }
+  /* 底部留白 = 标签栏高度 + 安全区，否则最后一张卡片会被标签栏盖住 */
+  .view { padding: 10px 10px calc(74px + env(safe-area-inset-bottom, 0px)); }
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); border-radius: 12px; margin-bottom: 10px; }
   .stat { padding: 7px 9px; min-width: 0; }
   .stat .v { font-size: 15px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
@@ -314,4 +353,59 @@
   .who .nm, .who .id { min-width: 0; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
   /* 标签类（限流冷却 · 1时02分 / 模型档位）窄列里换行，而不是 nowrap 撑着容器溢出 */
   .tag { max-width: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+
+  /* ══ 7. App 式交互层 ══════════════════════════════════════════════════
+     这一节只做"手机 App 该有、网页没有"的部分：底部主导航、下拉刷新、
+     触控尺寸、点击反馈。桌面端整块不生效。 */
+
+  /* 7.1 底部标签栏：5 个主入口常驻，拇指区可达。
+     56px 是 Material 建议的导航栏内容高（不含安全区），图标 22px + 10.5px 文字。 */
+  .tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 58;
+    background: var(--surface); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -8px 28px -18px rgba(0,0,0,.55);
+  }
+  .tabbar a {
+    flex: 1 1 0; min-width: 0; height: 56px; position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--ink-3); text-decoration: none; font-size: 10.5px; line-height: 1;
+    -webkit-tap-highlight-color: transparent; transition: color .15s ease;
+  }
+  .tabbar a svg { width: 22px; height: 22px; flex: none; }
+  .tabbar a.on { color: var(--accent); }
+  .tabbar a.on::before {
+    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 26px; height: 2.5px; border-radius: 0 0 3px 3px; background: var(--accent);
+  }
+  .tabbar a:active { background: var(--surface-2); }
+
+  /* 7.2 下拉刷新指示器：由 mobile.js 在贴顶下拉时显示 */
+  .ptr {
+    position: fixed; z-index: 45; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 52px);
+    width: 30px; height: 30px; margin-left: -15px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--raise); border: 1px solid var(--line); box-shadow: var(--shadow);
+    opacity: 0; transform: translateY(-8px) scale(.9); pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .ptr.on { opacity: 1; transform: none; }
+  .ptr svg { width: 16px; height: 16px; color: var(--accent); }
+  .ptr.busy svg { animation: ptrspin .8s linear infinite; }
+  @keyframes ptrspin { to { transform: rotate(360deg); } }
+
+  /* 7.3 触控尺寸与反馈：导航项、按钮、开关都按手指而不是鼠标来定 */
+  .nav a { padding: 12px 12px; font-size: 14.5px; border-radius: 9px; }
+  .nav a svg { width: 17px; height: 17px; }
+  button, .btn { min-height: 34px; -webkit-tap-highlight-color: transparent; }
+  .topbar button { min-height: 34px; }
+  .acc .acts button { min-height: 36px; }
+  .xs { min-height: 30px; }
+  /* 点了要有反馈：手机上没有 hover，只有 :active */
+  button:active, .nav a:active, .qrow:active { filter: brightness(.94); }
+  /* 文字不要长按选中（复制券码这类场景仍可在输入框内长按选择） */
+  .topbar, .tabbar, .nav, .box > header, .acc .acts { -webkit-user-select: none; user-select: none; }
+
+  /* 7.4 弹层内部滚动不外溢：滑到列表尽头时不要带着背后页面一起动 */
+  .dlg .body, .dlg .tab-panel { overscroll-behavior: contain; }
 }

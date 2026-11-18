@@ -1,0 +1,117 @@
+# 手机版（Android）
+
+WorkBuddy2API 的 **Android 客户端**：把 Go 网关整个塞进 APK 里，在手机上离线自跑，
+不需要电脑、不需要 Docker、不需要连服务器。
+
+- 内核：与桌面版**同一份** `cmd/server`（同一份面板、同一套账号池 / 定时任务 / 熔断逻辑），
+  手机端只是多了一层「原生壳」把服务拉起来并用 WebView 显示面板。
+- 界面：手机专用布局（底部标签栏、贴底弹层、下拉刷新、逐层返回），
+  不是把桌面网页硬缩放，**任何页面都不需要缩放或横向拖动**。
+- 后台：前台服务常驻通知栏，切后台 / 锁屏后网关继续跑，其它 App 可继续调用 `127.0.0.1:7863`。
+
+---
+
+## 一、直接装
+
+从本仓库 **Releases** 或 Actions 的 `WorkBuddy2API-apk` artifact 下载 `WorkBuddy2API-*.apk`，
+传到手机上安装即可（首次安装需允许「安装未知来源应用」）。
+
+要求：**Android 7.0（API 24）及以上，arm64 设备**（2016 年后的手机基本都是）。
+
+## 二、首次使用
+
+1. 打开 App，等待启动页走完（首次约 2–5 秒，会初始化配置与数据目录）。
+2. 首屏是空的账号池 → 点右上角 **添加账号** → 选「国内版 / 国际版」→ **获取授权链接**。
+3. 链接会用系统浏览器打开，登录并确认授权，然后**回到 App**（面板每 3 秒轮询一次，授权完会自动落盘）。
+4. 账号出现后即可用。定时签到 / 旅行 / 保活等任务照常按点执行。
+
+> **API 密钥**在「配置」页可以看到（点「显示」）。同一台手机上的其它 App 调用时用它：
+> `http://127.0.0.1:7863/v1` + `Authorization: Bearer <密钥>`。
+> 密钥是首次启动随机生成的，存在 App 私有目录 `config.json` 里。
+
+## 三、数据在哪
+
+| 内容 | 路径 |
+|---|---|
+| 配置 | `/data/data/com.wb2api.panel/files/config.json` |
+| 账号凭证 | `…/files/auths/workbuddy-<uid>.json`（明文 token，勿外传） |
+| 池状态 / 用量 / 日志 | `…/files/data/` |
+
+卸载 App 会一并删除；升级覆盖安装不会。需要备份就用面板里的导入 / 导出，或 root 后拷目录。
+
+## 四、手机端做了哪些适配
+
+桌面版的面板本身就是响应式网页（≤760px 有卡片化布局），手机端在此基础上补齐了「App 该有的东西」：
+
+| 项 | 说明 |
+|---|---|
+| **底部标签栏** | 账号池 / 用量 / 任务 / 模型 / 更多，拇指区一键直达；积分构成、配置、日志收进「更多」抽屉 |
+| **宽表 → 卡片** | 表头隐藏、字段名写进单元格，12 列网格逐表映射，账号卡 / 模型卡 / 用量卡都不会横向溢出 |
+| **贴底弹层** | 桌面端的居中弹窗改成底部升起的全宽面板，顶部有拖动把手，按钮落在拇指区 |
+| **下拉刷新** | 页面在顶部时下拉 64px 触发刷新，带转圈反馈 |
+| **返回键** | 关弹层 → 关抽屉 → 回首页 → 退到后台（**不杀服务**，通知栏可手动停止） |
+| **安全区** | 刘海 / 挖孔 / 手势条用 `env(safe-area-inset-*)` 让位，内容不会被遮挡 |
+| **状态栏跟随主题** | 面板切浅色，状态栏同步变浅色图标，不再是「白页面配黑状态栏」 |
+| **禁止缩放** | WebView 关闭缩放与双击放大，同时布局本身不留横向溢出（`scrollWidth == 视口宽`） |
+
+## 五、自己构建
+
+### 5.1 GitHub Actions（推荐，零环境）
+
+仓库已带工作流 `.github/workflows/android-apk.yml`：
+
+- push 到 `main` 或手动 `Run workflow` → 产出 `WorkBuddy2API-apk` artifact；
+- 打 `v*` tag → 自动创建 Release 并附上 APK。
+
+工作流自己会：装 JDK 17 + Go 1.23 + Android SDK → 交叉编译三种 ABI 的内核 → Gradle 打包。
+
+### 5.2 本地构建
+
+```bash
+# 依赖：Go 1.23+、JDK 17、Android SDK（compileSdk 34 / build-tools 34.0.0）
+export ANDROID_HOME=$HOME/Android/Sdk
+
+# 1. 交叉编译 Go 内核（产物在 app/src/main/jniLibs/<abi>/libwb2api.so）
+./android/build-go.sh
+
+# 2. 打包
+cd android && ./gradlew assembleRelease
+# 产物：android/app/build/outputs/apk/release/WorkBuddy2API-*.apk
+```
+
+签名用的是仓库里的 `android/keystore/wb2api.jks`（口令见 `gradle.properties`）。
+它是**自用自签**证书，只为保证每次构建签名一致、可以覆盖安装升级，不涉及任何商店。
+
+## 六、实现说明（为什么这么做）
+
+**1. 为什么 Go 二进制叫 `libwb2api.so`？**
+Android 10 起禁止 exec 应用数据目录里的文件（W^X 策略）。把二进制放进 `jniLibs/<abi>/lib*.so`，
+安装时系统会把它解压到 `nativeLibraryDir`（该目录允许执行），App 直接 `ProcessBuilder` 启动即可。
+所以 `android/build-go.sh` 产出的是 **普通 ELF 可执行文件**，只是借用了 `.so` 的命名规则。
+配套要求：`android:extractNativeLibs="true"` + `useLegacyPackaging = true`，缺一个都跑不起来。
+
+**2. 为什么编 `linux/arm64` 而不是 `android/arm64`？**
+Go 的 `GOOS=android` 必须带 cgo（要 NDK）。本项目是纯 Go（`CGO_ENABLED=0`），
+而 Android 内核就是 Linux，静态 `linux/arm64` 二进制可以直接运行，省掉整条 NDK 工具链。
+
+**3. 为什么必须给 `dns_servers`？**
+Android 没有 `/etc/resolv.conf`，Go 的纯 Go 解析器会退回 `[::1]:53`，导致所有域名解析失败。
+App 首次启动生成配置时会写入 `223.5.5.5 / 119.29.29.29`；若面板配置页把它清空，启动时会自动补回。
+
+**4. 为什么 `TZ=CST-8` 而不是 `Asia/Shanghai`？**
+Android 不带 `/usr/share/zoneinfo`，`Asia/Shanghai` 解析不到会退化成 UTC，
+签到 / 旅行 / 保活会全部错 8 小时。`CST-8` 是 POSIX 时区串，UTC+8、无夏令时，正好。
+
+**5. 为什么要有前台服务？**
+Android 8 起后台进程会被限流 / 冻结。没有前台服务，手机一锁屏网关就停，其它 App 请求全部超时。
+常驻通知是代价，也是「一键停止」的入口。
+
+## 七、排障
+
+| 现象 | 处理 |
+|---|---|
+| 卡在启动页 / 提示「内置网关已退出」 | 错误页会打印内核最后 1KB 日志；多为端口被占用或配置 JSON 写坏了 |
+| 面板能开但账号加不上 | 授权要在**浏览器**里完成，完成后必须切回 App；过期就重新点「获取授权链接」 |
+| 所有请求域名解析失败 | 「配置」页把 `dns_servers` 清空了，杀掉 App 重开会自动补回 |
+| 定时任务时间不对 | 检查系统时间是否准确；容器/手机一律用 `CST-8` 固定时区 |
+| 后台一会儿就断 | 系统「电池优化 / 后台限制」把 App 限制了，把 WorkBuddy2API 设为「不受限制」 |

@@ -45,3 +45,16 @@ docs/
 *.zip
 server.exe
 .DS_Store
+
+# ── Android（手机版）───────────────────────────────────────────────
+# 只在 CI / 本地由 android/build-go.sh 生成，不进版本库（每个 8MB+）
+android/app/src/main/jniLibs/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.apk
+*.aab
+# 允许 Android 目录下的说明文档（仓库根规则忽略 *.md）
+!android/*.md

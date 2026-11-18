@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色底 + 无 ActionBar：WebView 是唯一界面，启动瞬间不闪白 -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bootBg</item>
+        <item name="android:statusBarColor">@color/bootBg</item>
+        <item name="android:navigationBarColor">@color/bootBar</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

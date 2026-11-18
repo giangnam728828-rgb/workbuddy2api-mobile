@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bootBg">#0C0E14</color>
+    <color name="bootBar">#10131A</color>
+    <color name="accent">#5B7CFA</color>
+</resources>

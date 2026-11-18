@@ -227,3 +227,165 @@ function drawMobileUsageChart(series) {
 }
 
 renderUsageChart = mobileUsageChart;
+
+/* ══ App 壳层（底部标签栏 / 下拉刷新 / 返回键 / 主题同步）══════════════════
+   这一节把「网页」变成「App」：手机上不再靠左上角汉堡找入口，而是常驻底栏；
+   下拉即刷新；系统返回键按 弹层 → 抽屉 → 首页 → 退出 的顺序逐层后退；
+   页面明暗切换同步给原生状态栏，避免浅色页面配深色状态栏的割裂感。
+
+   全部逻辑都在 ≤760px 生效（native 桥接除外），桌面端零影响。
+   依赖 app.js 的 go() / $() / 各 closeXxx()；本文件在其后加载，故都能拿到。 */
+(function appShell() {
+  /* 单测会在没有 DOM 的 node vm 里截取本文件后半段跑图表断言：无 window 直接退出，
+     不要在这里碰任何全局对象。 */
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const IS_APP = !!window.AndroidBridge;   // 原生 WebView 注入的桥
+  if (IS_APP) document.documentElement.classList.add('in-app');
+
+  /* ── 1. 底部标签栏 ────────────────────────────────────────────────
+     5 个入口是"每天都会点"的：账号池 / 用量 / 任务 / 模型 / 更多。
+     积分构成、配置、运行日志属于低频项，留在抽屉里（点"更多"打开）。 */
+  const TABS = [
+    { v: 'accounts', t: '账号池', d: '<circle cx="8" cy="5.5" r="2.6"/><path d="M2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4"/>' },
+    { v: 'usage', t: '用量', d: '<path d="M2 13.5h12"/><path d="M4.5 13.5V8.2M8 13.5V3.5M11.5 13.5v-3"/>' },
+    { v: 'taskscenter', t: '任务', d: '<path d="M3 2.5h10v9H8l-3 3v-3H3z"/><path d="M6 6.5h4M6 9h2.5"/>' },
+    { v: 'models', t: '模型', d: '<path d="M8 1.8 14 5v6L8 14.2 2 11V5z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/>' },
+    { v: 'more', t: '更多', d: '<circle cx="3" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="13" cy="8" r="1.3" fill="currentColor" stroke="none"/>' }
+  ];
+  /* 抽屉里的低频视图归属"更多"：进这些页面时底栏高亮"更多"而不是全灭 */
+  const MORE_VIEWS = { packages: 1, config: 1, logs: 1 };
+
+  const bar = document.createElement('nav');
+  bar.className = 'tabbar';
+  bar.id = 'tabBar';
+  bar.setAttribute('aria-label', '主导航');
+  bar.innerHTML = TABS.map(x =>
+    '<a href="#' + x.v + '" data-tab="' + x.v + '">' +
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + x.d + '</svg>' +
+    '<span>' + x.t + '</span></a>'
+  ).join('');
+  document.body.appendChild(bar);
+
+  /* syncTabs 把当前视图映射回 5 个入口之一（低频页 → 更多）。 */
+  function syncTabs(v) {
+    const cur = v || (location.hash || '#accounts').slice(1);
+    const key = MORE_VIEWS[cur] ? 'more' : cur;
+    bar.querySelectorAll('a').forEach(a => a.classList.toggle('on', a.dataset.tab === key));
+  }
+
+  /* 包一层 go()：app.js 内部（导航点击、深链、外部调用）都走同一条路径，
+     包在 go 上比给每个入口单独绑事件更不容易漏。 */
+  const baseGo = window.go;
+  window.go = function (v) {
+    baseGo(v);
+    syncTabs(v);
+    window.scrollTo(0, 0);
+    document.title = 'WorkBuddy2API · ' + ((document.getElementById('ttl') || {}).textContent || '');
+  };
+  syncTabs();
+
+  bar.addEventListener('click', ev => {
+    const a = ev.target.closest('a');
+    if (!a) return;
+    ev.preventDefault();
+    if (a.dataset.tab === 'more') { drawerSet(true); return; }
+    window.go(a.dataset.tab);
+    history.replaceState(null, '', '#' + a.dataset.tab);
+  });
+
+  /* ── 2. 下拉刷新 ──────────────────────────────────────────────────
+     只有"已经在页面最顶端 + 单指 + 纵向下拉"才接管，否则一律不拦（否则列表
+     滑不动）。超过 64px 松手即触发顶栏的「刷新」，同时指示器转圈。 */
+  const ptr = document.createElement('div');
+  ptr.className = 'ptr';
+  ptr.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 2.5v8M4.8 7.4 8 10.6l3.2-3.2"/></svg>';
+  document.body.appendChild(ptr);
+
+  const PTR_TRIGGER = 64;
+  let ptrStartY = 0, ptrStartX = 0, ptrDy = 0, ptrActive = false, ptrBusy = false;
+
+  addEventListener('touchstart', ev => {
+    if (ptrBusy || ev.touches.length !== 1) return;
+    if (window.scrollY > 0) return;
+    if (document.querySelector('.veil.on')) return;
+    ptrStartY = ev.touches[0].clientY;
+    ptrStartX = ev.touches[0].clientX;
+    ptrActive = true; ptrDy = 0;
+  }, { passive: true });
+
+  addEventListener('touchmove', ev => {
+    if (!ptrActive) return;
+    const dy = ev.touches[0].clientY - ptrStartY;
+    const dx = ev.touches[0].clientX - ptrStartX;
+    if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || window.scrollY > 0) { ptrActive = false; ptr.classList.remove('on'); return; }
+    if (dy > 6) {
+      ev.preventDefault();              // 接管手势：不让 WebView 自己弹橡皮筋
+      ptrDy = dy;
+      ptr.classList.add('on');
+      ptr.style.transform = 'translateY(' + Math.min(18, dy / 4) + 'px) scale(' + Math.min(1, 0.85 + dy / 400) + ')';
+    }
+  }, { passive: false });
+
+  addEventListener('touchend', () => {
+    if (!ptrActive) return;
+    ptrActive = false;
+    ptr.style.transform = '';
+    if (ptrDy >= PTR_TRIGGER) {
+      ptrBusy = true;
+      ptr.classList.add('on', 'busy');
+      const btn = document.getElementById('btnRefresh');
+      if (btn) btn.click();
+      setTimeout(() => { ptrBusy = false; ptr.classList.remove('on', 'busy'); }, 900);
+    } else {
+      ptr.classList.remove('on');
+    }
+    ptrDy = 0;
+  });
+  addEventListener('touchcancel', () => { ptrActive = false; ptrDy = 0; ptr.classList.remove('on'); ptr.style.transform = ''; });
+
+  /* ── 3. 系统返回键 ────────────────────────────────────────────────
+     原生侧 evaluateJavascript 取返回值：true = 已消费（关弹层/关抽屉/回首页），
+     false = 交给系统（App 退到后台，不杀进程，服务继续跑）。 */
+  const VEIL_CLOSER = {
+    addVeil: () => typeof closeAdd === 'function' && closeAdd(),
+    taskVeil: () => typeof closeTasks === 'function' && closeTasks(),
+    remarkVeil: () => typeof closeRemarks === 'function' && closeRemarks(),
+    vcVeil: () => { const v = document.getElementById('vcVeil'); if (v) v.classList.remove('on'); }
+  };
+  window.__wbBack = function () {
+    const drawer = document.getElementById('navDrawer');
+    if (drawer && drawer.classList.contains('open')) { drawerSet(false); return true; }
+    const veil = document.querySelector('.veil.on');
+    if (veil) {
+      if (veil.id === 'keyVeil') return false;   // 鉴权门不能靠返回键绕过
+      const closer = VEIL_CLOSER[veil.id];
+      if (closer) closer(); else veil.classList.remove('on');
+      return true;
+    }
+    const cur = (location.hash || '#accounts').slice(1);
+    if (cur && cur !== 'accounts') {
+      window.go('accounts');
+      history.replaceState(null, '', '#accounts');
+      return true;
+    }
+    return false;
+  };
+
+  /* ── 4. 主题同步（状态栏 / 导航栏取色）──────────────────────────────
+     app.js 只改 <html data-theme>，原生层无从得知；这里把生效主题推给原生，
+     让状态栏图标与背景跟着面板一起明暗。 */
+  function pushTheme() {
+    if (!window.AndroidBridge || !window.AndroidBridge.setTheme) return;
+    const t = document.documentElement.getAttribute('data-theme') || 'dark';
+    try { window.AndroidBridge.setTheme(t); } catch (e) {}
+  }
+  pushTheme();
+  new MutationObserver(pushTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  /* 原生侧"回到前台"时通知页面：手机上后台久了，数据可能已经过期，
+     回前台自动刷一次比让用户自己点刷新更符合 App 直觉。 */
+  window.__wbOnResume = function () {
+    const btn = document.getElementById('btnRefresh');
+    if (btn) btn.click();
+  };
+})();

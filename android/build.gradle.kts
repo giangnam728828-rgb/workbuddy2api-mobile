@@ -1,0 +1,4 @@
+// 根构建脚本：只声明 AGP 版本，具体配置在 app/build.gradle.kts。
+plugins {
+    id("com.android.application") version "8.5.2" apply false
+}

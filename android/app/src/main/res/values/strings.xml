@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WorkBuddy2API</string>
+    <string name="notif_channel">本机网关</string>
+    <string name="notif_channel_desc">保持内置网关在后台运行</string>
+    <string name="notif_title">WorkBuddy2API 运行中</string>
+    <string name="notif_text">网关监听 127.0.0.1:%1$d · 点按返回面板</string>
+</resources>

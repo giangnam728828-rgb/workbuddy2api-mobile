@@ -36,6 +36,26 @@
 
 > ⚠️ **本项目仅限自用账号（签到 / 保活 / 个人工具接入），不支持同时也是禁止批量小号分发额度、二次打包或收费售卖。** 详见 [使用声明（必读）](#使用声明必读)。
 
+## 📱 手机版（Android APK）
+
+这个分支在桌面版之外提供了**手机 App**：把网关内核整个打进 APK，手机上独立运行，不依赖电脑、Docker 或服务器。
+
+| 能力 | 说明 |
+|---|---|
+| 与桌面版同一套内核 | 账号池、熔断冷却、会话粘性、定时签到 / 旅行 / 保活、任务中心、模型与档位、配置、日志，**功能无删减** |
+| 手机专用界面 | 底部标签栏 + 贴底弹层 + 下拉刷新 + 逐层返回 + 安全区适配，**任何页面都不需要缩放或横向拖动** |
+| 后台常驻 | 前台服务 + 通知栏，切后台 / 锁屏后网关继续跑，同机其它 App 可直接调 `127.0.0.1:7863` |
+| 一键出包 | `.github/workflows/android-apk.yml`：push 即构建，打 `v*` tag 自动发 Release |
+
+- 下载：仓库 **Releases** 里的 `WorkBuddy2API-*.apk`（或 Actions 的 `WorkBuddy2API-apk` artifact）
+- 安装：Android 7.0+ / arm64，允许「安装未知来源应用」即可，无需 root
+- 构建与实现细节（为什么用 `libwb2api.so`、为什么要 `dns_servers` / `TZ=CST-8`）：见 [android/README.md](android/README.md)
+
+```bash
+# 本地打包（需要 Go 1.23+、JDK 17、Android SDK 34）
+./android/build-go.sh && cd android && ./gradlew assembleRelease
+```
+
 ## 使用声明（必读）
 
 本项目（含上游 [Sliverkiss/workbuddy2api](https://github.com/Sliverkiss/workbuddy2api)，下同）的开发初衷只有一个：**方便个人管理自己的 CodeBuddy 账号**——自动签到、保活、给自己的本地工具提供一个 OpenAI 兼容入口。它是免费、开源、按「原样」提供的个人自用工具。

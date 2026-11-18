@@ -1,0 +1,87 @@
+name: android-apk
+
+# 手机版：Go 内核交叉编译 → Gradle 打包成 APK。
+#   - push 到 main / 手动触发：产出 APK，作为 artifact 可下载
+#   - 打 v* tag：额外创建 Release 并附上 APK
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "android/**"
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "cmd/**"
+      - "internal/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle（带缓存）
+        uses: gradle/actions/setup-gradle@v3
+
+      # Go 静态二进制 → jniLibs/<abi>/libwb2api.so（详见 android/build-go.sh 注释）
+      - name: Build Go core for Android
+        run: |
+          chmod +x android/build-go.sh android/gradlew
+          ./android/build-go.sh
+
+      - name: Build APK
+        run: |
+          cd android
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/*.apk dist/WorkBuddy2API-$(date +%Y%m%d).apk
+          ls -lh dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WorkBuddy2API-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release（仅 tag）
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
