@@ -17,6 +17,7 @@ import android.view.ViewGroup;
 import android.view.WindowInsetsController;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -224,6 +225,16 @@ public class MainActivity extends Activity {
 
     private void showError(String msg) {
         ui.post(() -> {
+            // 面板已挂到 root 上时会盖住 splash：先摘掉，错误页才看得见；
+            // 重试走 recreate()，会重新建 WebView。
+            if (web != null) {
+                root.removeView(web);
+                web.destroy();
+                web = null;
+                keyChecked = false;
+                panelShown = false;
+            }
+            splash.setVisibility(View.VISIBLE);
             splash.removeAllViews();
             splash.setPadding(dp(24), dp(24), dp(24), dp(24));
 
@@ -298,6 +309,16 @@ public class MainActivity extends Activity {
             @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return handleUrl(Uri.parse(url));
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
+                // 只处理主文档失败；图片/字体等子资源失败不影响面板使用。
+                // 走 showError 而不是让 WebView 显示自带错误页：中文诊断 + 内核日志更可查。
+                if (req != null && req.isForMainFrame()) {
+                    showError("面板加载失败（" + err.getErrorCode() + "）：" + err.getDescription()
+                            + "\n\n" + ServerRunner.tail(800));
+                }
             }
 
             @Override
