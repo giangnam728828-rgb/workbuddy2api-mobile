@@ -170,6 +170,11 @@ public class MainActivity extends Activity {
                     if (i == 60) setStatus("首次启动较慢，请稍候…");
                     Thread.sleep(250);
                 }
+                // 兜底放行：只要端口已经在监听，就先进面板。
+                // 面板自己会把「没有账号」「密钥不对」显示清楚，比把用户锁在启动页强；
+                // 之前正是缺这一层，才会出现「日志已 listening、App 却报超时」。
+                if (!ok && portOpen()) ok = true;
+
                 if (ok) {
                     ui.post(this::createWebView);
                 } else {
@@ -183,17 +188,37 @@ public class MainActivity extends Activity {
         }, "wb2api-boot").start();
     }
 
+    /**
+     * 判断「内置网关是否已经可以打开面板」。
+     *
+     * 注意这里刻意不要求账号池可用：网关在没有任何账号时（全新安装、账号被删光）
+     * /healthz 返回 503 —— 那是「当前没有可服务账号」的业务语义，不是「服务没起来」。
+     * 早期版本只认 200，于是空账号池的首次启动一定卡满 40 秒再报「启动超时」，
+     * 而日志里明明已经 listening。200 与 503 都视为就绪。
+     */
     private boolean healthy() {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(baseUrl + "/healthz").openConnection();
-            c.setConnectTimeout(800);
-            c.setReadTimeout(800);
-            return c.getResponseCode() == 200;
+            c.setConnectTimeout(1000);
+            c.setReadTimeout(1000);
+            c.setUseCaches(false);
+            int code = c.getResponseCode();
+            return code == 200 || code == 503;
         } catch (Exception e) {
             return false;
         } finally {
             if (c != null) c.disconnect();
+        }
+    }
+
+    /** 端口是否已被监听：探活口径以后若再变，也不至于把可用的服务判死。 */
+    private boolean portOpen() {
+        try (java.net.Socket s = new java.net.Socket()) {
+            s.connect(new java.net.InetSocketAddress("127.0.0.1", port), 500);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

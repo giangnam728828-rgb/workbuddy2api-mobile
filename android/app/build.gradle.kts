@@ -17,8 +17,11 @@ android {
         applicationId = "com.wb2api.panel"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.13.0"
+        // versionCode 必须单调递增，否则部分 ROM 的安装器会拒绝覆盖安装
+        // （同版本号覆盖在原生 Android 上允许，但国产 ROM 常按「不大于已装版本」直接拦）。
+        // CI 用 11300 + run_number 注入，保证每次构建都大于上一版；本地默认 11301。
+        versionCode = (project.findProperty("wb2apiVersionCode") as String?)?.toIntOrNull() ?: 11301
+        versionName = (project.findProperty("wb2apiVersionName") as String?) ?: "1.13.1"
 
         // Go 交叉编译产物按 ABI 放进 jniLibs：arm64 覆盖 99% 真机，
         // armeabi-v7a 兜底老设备，x86_64 给模拟器/少数平板。
@@ -33,8 +36,10 @@ android {
             storePassword = storePasswordValue
             keyAlias = keyAliasValue
             keyPassword = keyPasswordValue
+            // V1 给 Android 7.x，V2 覆盖 8.0+，V3 让 9+ 的密钥轮换/校验更严谨。
             enableV1Signing = true
             enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

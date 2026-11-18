@@ -75,15 +75,39 @@ jobs:
           chmod +x android/build-go.sh android/gradlew
           ./android/build-go.sh
 
+      # 版本号：11300 + run_number，保证单调递增（部分 ROM 会按版本号拦覆盖安装）。
+      # 签名：仓库内 android/keystore/wb2api.jks（固定证书），不是 debug/临时签名。
       - name: Build APK
+        env:
+          VERSION_CODE: ${{ github.run_number }}
         run: |
           cd android
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon assembleRelease \
+            -Pwb2apiVersionCode=$((11300 + VERSION_CODE)) \
+            -Pwb2apiVersionName=1.13.1
+
+      # 签名指纹断言：证书一旦被换掉（例如误用 debug key、keystore 丢失后重建），
+      # 老用户就无法覆盖安装。这里直接让构建失败，比发出去再被用户发现好。
+      - name: Verify signing certificate
+        run: |
+          set -euo pipefail
+          APK=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          FPR=$("$BT/apksigner" verify --print-certs "$APK" \
+                | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 \
+                | tr -d ':' | tr 'A-Z' 'a-z')
+          echo "APK: $APK"
+          echo "签名 SHA-256: $FPR"
+          EXPECT=b6ba56eed24b7385d4d5f290a2e89d5542b3b0c98814a0b33beb44cd1eb2e400
+          if [ "$FPR" != "$EXPECT" ]; then
+            echo "::error::签名指纹变了（$FPR != $EXPECT）：老用户将无法覆盖安装，请检查 android/keystore 与 gradle.properties"
+            exit 1
+          fi
 
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/*.apk dist/WorkBuddy2API-$(date +%Y%m%d).apk
+          cp android/app/build/outputs/apk/release/*.apk "dist/WorkBuddy2API-1.13.1.apk"
           ls -lh dist
 
       - name: Upload artifact
