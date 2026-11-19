@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/linguo2625469/workbuddy2api-panel/internal/auth"
+	"github.com/linguo2625469/workbuddy2api-panel/internal/checkin"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/credithist"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/httpauth"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/livecfg"
@@ -41,6 +42,9 @@ type Config struct {
 	APIKey    string               // 空 = 不鉴权（与主服务同语义）；与 Live 同时给出时 Live 优先
 	RedisMode string               // "upstash" / "noop"，仅观测透出
 	Version   string               // 面板版本号（展示用）
+
+	// Checkin 多站点签到中心（nil = 对应端点返回 501，面板页面上入口隐藏）。
+	Checkin *checkin.Service
 
 	// Live 运行期可变配置（在线改配置立即生效）。
 	Live *livecfg.Holder
@@ -94,6 +98,10 @@ type Panel struct {
 	// 任务中心执行队列（taskcenter.go）。
 	queueOnce sync.Once
 	q         *queueState
+
+	// Checkin 多站点签到服务（签到中心页）。构造时从 cfg 提升：
+	// handlers 直接用字段而不是翻 cfg，语义与 Usage/RequestLog 一致。
+	Checkin *checkin.Service
 }
 
 // tryLockAccount 尝试锁定账号的任务执行；已在执行返回 false。
@@ -143,6 +151,8 @@ func New(cfg Config) *Panel {
 		logs:    NewRing(500),
 		logins:  map[string]loginSession{},
 	}
+	// 签到中心服务提升为字段：handlers 都挂在它上面（nil = 未接线，端点回 501）。
+	p.Checkin = cfg.Checkin
 	p.routes()
 	return p
 }
@@ -196,6 +206,17 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("GET /panel/api/compensation", p.withAuth(p.compensation))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/compensation", p.withAuth(p.accountCompensationClaim))
 	p.mux.HandleFunc("POST /panel/api/compensation_all", p.withAuth(p.compensationAll))
+
+	// 签到中心（多站点每日签到）：8 条端点，见 checkin.go。
+	p.mux.HandleFunc("GET /panel/api/checkin", p.withAuth(p.checkinGuard(p.checkinSnapshot)))
+	p.mux.HandleFunc("POST /panel/api/checkin/sites", p.withAuth(p.checkinGuard(p.checkinSiteCreate)))
+	p.mux.HandleFunc("POST /panel/api/checkin/sites/{id}", p.withAuth(p.checkinGuard(p.checkinSiteUpdate)))
+	p.mux.HandleFunc("POST /panel/api/checkin/sites/{id}/delete", p.withAuth(p.checkinGuard(p.checkinSiteDelete)))
+	p.mux.HandleFunc("POST /panel/api/checkin/sites/{id}/run", p.withAuth(p.checkinGuard(p.checkinSiteRun)))
+	p.mux.HandleFunc("POST /panel/api/checkin/run_all", p.withAuth(p.checkinGuard(p.checkinRunAll)))
+	p.mux.HandleFunc("POST /panel/api/checkin/settings", p.withAuth(p.checkinGuard(p.checkinSettings)))
+	p.mux.HandleFunc("POST /panel/api/checkin/test", p.withAuth(p.checkinGuard(p.checkinTest)))
+	p.mux.HandleFunc("GET /panel/api/checkin/history", p.withAuth(p.checkinGuard(p.checkinHistory)))
 }
 
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API
@@ -278,8 +299,8 @@ func (p *Panel) overview(w http.ResponseWriter, r *http.Request) {
 		"model_locks": p.cfg.Pool.ModelLockView(),
 		// 到期提醒快照的节奏与年龄：界面轮询是 5 秒级，但卡片数据只随余额后台刷新
 		// 更新（默认每 5 分钟）——把这两个数透出，前端才能如实标注「x 分钟前更新」。
-		"balance_refresh_sec":    p.balanceRefreshSec(),
-		"balance_refreshed_at":   p.balanceRefreshedAt(),
+		"balance_refresh_sec":  p.balanceRefreshSec(),
+		"balance_refreshed_at": p.balanceRefreshedAt(),
 	})
 }
 
