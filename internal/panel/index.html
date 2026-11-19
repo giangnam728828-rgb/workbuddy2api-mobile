@@ -603,6 +603,101 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     color: var(--ink-2); font-size: 12.5px; }
   .rm-row input { flex: 1; }
 
+  /* ── 签到中心（#view-checkin）────────────────────────────────────
+     本视图为本仓库自有功能，样式与页面其余部分共用同一套设计令牌。
+     桌面：总览条 + 设置条 + 两列站点卡网格；手机端由 mobile.css 压成单列。 */
+  .ck-top {
+    display: flex; align-items: center; gap: 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 14px; box-shadow: var(--shadow);
+  }
+  .ck-ring {
+    --p: 0;
+    width: 72px; height: 72px; flex: none; border-radius: 50%;
+    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line-soft) 0);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative; font-variant-numeric: tabular-nums;
+  }
+  .ck-ring::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--raise); }
+  .ck-ring b, .ck-ring i { position: relative; font-style: normal; line-height: 1.1; }
+  .ck-ring b { font-size: 20px; font-weight: 650; }
+  .ck-ring i { color: var(--ink-3); font-size: 11px; }
+  .ck-top-main { min-width: 0; flex: 1; }
+  .ck-title { font-size: 15.5px; font-weight: 620; letter-spacing: -.01em; }
+  .ck-sub { color: var(--ink-2); font-size: 12.5px; margin-top: 3px; min-width: 0; overflow-wrap: anywhere; }
+  .ck-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .ck-bar i { flex: 1; height: 4px; border-radius: 2px; background: var(--accent);
+    animation: ckbar 1.1s ease-in-out infinite alternate; }
+  @keyframes ckbar { from { opacity: .35; } to { opacity: 1; } }
+  .ck-bar .note { white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { .ck-bar i { animation: none; } }
+  .ck-settings header { flex-wrap: wrap; gap: 8px 10px; }
+  .ck-settings input[type="time"] {
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--ink); padding: 5px 9px; font: 550 13px var(--mono);
+  }
+  /* 开关：纯 CSS 胶囊，checkbox 仍可聚焦（键盘可达） */
+  .ck-switch { position: relative; display: inline-flex; flex: none; cursor: pointer; vertical-align: middle; }
+  .ck-switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .ck-switch i {
+    width: 40px; height: 22px; border-radius: 11px; background: var(--line);
+    transition: background .18s ease; position: relative; display: block;
+  }
+  .ck-switch i::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--ink-2); transition: transform .18s ease, background .18s ease;
+  }
+  .ck-switch input:checked + i { background: var(--accent); }
+  .ck-switch input:checked + i::after { transform: translateX(18px); background: #fff; }
+  .ck-switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #ckList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .ck-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 14px; display: flex; flex-direction: column; gap: 7px; box-shadow: var(--shadow);
+    min-width: 0;
+  }
+  .ck-card.off { opacity: .62; }
+  .ck-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ck-name { font-size: 13.5px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; flex: 1;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ck-host { color: var(--ink-3); font-size: 11.5px; font-family: var(--mono);
+    min-width: 0; overflow-wrap: anywhere; }
+  .ck-msg { font-size: 12.5px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ck-msg.ok { color: var(--ok); }
+  .ck-msg.bad { color: var(--bad); }
+  .ck-msg.open { -webkit-line-clamp: unset; overflow: visible; }
+  .ck-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+  .ck-foot .grow { flex: 1; }
+  .ck-when { color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .ck-hist { border-top: 1px dashed var(--line-soft); padding-top: 8px; display: flex;
+    flex-direction: column; gap: 5px; }
+  .ck-hist-row { display: flex; gap: 8px; font-size: 11.5px; color: var(--ink-2);
+    min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .ck-hist-row .h-ok { color: var(--ok); flex: none; }
+  .ck-hist-row .h-bad { color: var(--bad); flex: none; }
+  .ck-hist-row .h-at { color: var(--ink-3); flex: none; white-space: nowrap; }
+  .ck-empty { text-align: center; padding: 34px 20px; display: flex; flex-direction: column;
+    align-items: center; gap: 10px; }
+  .ck-empty-ico svg { width: 44px; height: 44px; color: var(--ink-3); }
+  .ck-empty-t { font-size: 14px; font-weight: 620; }
+  .ck-empty-d { color: var(--ink-2); font-size: 12.5px; max-width: 460px; min-width: 0;
+    overflow-wrap: anywhere; }
+  .ck-add {
+    width: 100%; margin-top: 14px; padding: 12px; border-radius: 12px;
+    border: 1px dashed var(--line); background: var(--surface); color: var(--ink-2);
+    font: 550 13.5px var(--sans); cursor: pointer; min-height: 46px;
+  }
+  .ck-add:hover { color: var(--accent); border-color: var(--accent); }
+  /* 编辑弹层表单：桌面两列，长字段（Cookie/请求体/备注）跨两列 */
+  .ck-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .ck-form .full { grid-column: 1 / -1; }
+  .ck-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+    color: var(--ink-2); min-width: 0; }
+  .ck-form label b { font-weight: 600; color: var(--ink); }
+  .ck-form label .op { color: var(--ink-3); font-weight: 400; }
+  .ck-login-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ck-login-row .hint { flex: 1; min-width: 0; }
 </style>
 <!-- 移动端适配：独立文件，必须在主 <style> 之后（@media 覆盖依赖层叠顺序） -->
 <link rel="stylesheet" href="mobile.css">
@@ -618,6 +713,9 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       <li><a href="#accounts" data-view="accounts" class="on">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.5" r="2.6"/><path d="M2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4"/></svg>
         账号池</a></li>
+      <li><a href="#checkin" data-view="checkin">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.2" y="3" width="11.6" height="10.8" rx="2"/><path d="M2.2 6.4h11.6M5.4 1.6v2.6M10.6 1.6v2.6"/><path d="m5.6 10.3 1.7 1.7 3.1-3.3"/></svg>
+        签到中心</a></li>
       <li><a href="#usage" data-view="usage">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 13.5h12"/><path d="M4.5 13.5V8.2M8 13.5V3.5M11.5 13.5v-3"/></svg>
         用量</a></li>
@@ -741,6 +839,45 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         </table>
         </div>
       </div>
+    </section>
+
+    <!-- 签到中心：多站点每日签到（auto = new-api 系自动识别，template = 自定义模板）。
+         顶部总览（圆环 = 今日已签 / 启用数）+ 自动签到设置 + 站点卡列表。 -->
+    <section class="view" id="view-checkin" hidden>
+      <div class="ck-top">
+        <div class="ck-ring" id="ckRing" style="--p:0" role="img" aria-label="今日签到进度">
+          <b id="ckRingOk">0</b><i>/<span id="ckRingAll">0</span></i>
+        </div>
+        <div class="ck-top-main">
+          <div class="ck-title">今日签到</div>
+          <div class="ck-sub" id="ckSub">读取中…</div>
+        </div>
+        <button class="primary" id="btnCkRunAll">一键签到</button>
+      </div>
+      <div class="ck-bar" id="ckBar" hidden><i id="ckBarFill"></i><span class="note" id="ckBarText">正在签到…</span></div>
+
+      <div class="box ck-settings">
+        <header>
+          <h3>自动签到<span class="hint">每天到点自动执行 · 手机锁屏也照跑（网关常驻前台服务）</span></h3>
+          <span class="grow"></span>
+          <label class="ck-switch"><input type="checkbox" id="ckEnabled"><i></i></label>
+          <input type="time" id="ckRunAt" value="08:05" aria-label="自动签到时间">
+          <button class="xs" id="btnCkSaveSet">保存</button>
+        </header>
+      </div>
+
+      <div id="ckList"></div>
+
+      <div class="box ck-empty" id="ckEmpty" hidden>
+        <div class="ck-empty-ico" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="7" y="10" width="34" height="30" rx="4"/><path d="M7 19h34M16 6v8M32 6v8"/><path d="m17 29 5 5 9-10"/></svg>
+        </div>
+        <div class="ck-empty-t">还没有添加站点</div>
+        <div class="ck-empty-d">三步开始：<b>添加站点</b> → 填网址后点「网页登录取 Cookie」→ 保存，以后每天到点自动签，也可以随时一键全签。</div>
+        <button class="primary" id="btnCkAddEmpty">＋ 添加站点</button>
+      </div>
+
+      <button class="ck-add" id="btnCkAdd">＋ 添加站点</button>
     </section>
 
     <!-- 任务中心 -->
@@ -1369,6 +1506,66 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       <span class="grow"></span>
       <button id="btnRemarkClose">关闭</button>
       <button class="primary" id="btnRemarkSave">保存</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 签到中心：添加/编辑站点。Cookie/Token 不回显（只存服务端）；
+     「网页登录取 Cookie」在 App 内打开站点登录页自动抓取（桌面/普通浏览器回退为手动粘贴）。 -->
+<div class="veil" id="ckVeil">
+  <div class="dlg" style="width:640px">
+    <header>
+      <h3 id="ckDlgTitle">添加站点</h3>
+      <div class="hint">填网址 + Cookie 就能签（自动识别 new-api 系接口）；接口不一样的站切「自定义模板」。</div>
+    </header>
+    <div class="body">
+      <div class="ck-form">
+        <label><b>名称</b><input id="ckName" placeholder="取个名字，比如「某某中转」"></label>
+        <label><b>网址</b><input id="ckURL" inputmode="url" placeholder="https://example.com"></label>
+
+        <label class="full ck-login-row">
+          <b>Cookie</b><span class="op">编辑时留空 = 不修改</span>
+          <button type="button" class="xs" id="btnCkLogin" title="在 App 内打开该站点登录，完成后自动带回 Cookie">网页登录取 Cookie</button>
+        </label>
+        <label class="full"><textarea id="ckCookie" rows="3" placeholder="登录后从浏览器复制整串 Cookie（App 内可一键获取）" spellcheck="false"></textarea></label>
+
+        <label><b>Token <span class="op">可选</span></b><input id="ckToken" placeholder="部分站支持 Bearer Token"></label>
+        <label><b>备注 <span class="op">可选</span></b><input id="ckNote" placeholder="记点什么，只给自己看"></label>
+
+        <label><b>签到方式</b>
+          <select id="ckType">
+            <option value="auto" selected>自动识别（new-api / one-api 系）</option>
+            <option value="template">自定义模板</option>
+          </select>
+        </label>
+        <label><b>成功判定 <span class="op">自动识别时不用填</span></b><input id="ckOKKw" placeholder="响应里出现这个词 = 成功"></label>
+
+        <div class="full" id="ckTplGroup" hidden>
+          <div class="ck-form" style="gap:10px 12px">
+            <label><b>请求方式</b>
+              <select id="ckMethod">
+                <option value="POST" selected>POST</option>
+                <option value="GET">GET</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+            </label>
+            <label><b>接口路径 <span class="op">留空 = 用上面的网址</span></b><input id="ckPath" placeholder="/api/user/checkin 或完整 URL"></label>
+            <label class="full"><b>请求头 <span class="op">每行一个：Key: Value</span></b><textarea id="ckHeaders" rows="2" placeholder="X-Source: web" spellcheck="false"></textarea></label>
+            <label class="full"><b>请求体 <span class="op">可选，支持 {{cookie}} {{token}} {{date}} {{ts}}</span></b><textarea id="ckBody" rows="2" placeholder='{"username":"a"}' spellcheck="false"></textarea></label>
+            <label><b>失败关键字</b><input id="ckBadKw" placeholder="响应里出现这个词 = 失败"></label>
+            <label><b>成功 JSON 字段</b><input id="ckJSONPath" placeholder="如 success 或 data.checked"></label>
+          </div>
+        </div>
+      </div>
+      <div class="state" id="ckTestRes" hidden style="margin-top:12px"></div>
+    </div>
+    <footer>
+      <button id="btnCkTest">测试</button>
+      <span class="grow"></span>
+      <button id="btnCkClose">取消</button>
+      <button class="primary" id="btnCkSave">保存</button>
     </footer>
   </div>
 </div>

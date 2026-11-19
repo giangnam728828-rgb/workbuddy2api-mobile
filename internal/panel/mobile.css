@@ -328,6 +328,32 @@
   .pk-expiry-hdr, .pk-expiry-row { grid-template-columns: 52px minmax(60px, 1fr) 62px; gap: 6px; }
   .pk-expiry-chart { padding-right: 4px; }
 
+  /* ── 签到中心（#view-checkin）：桌面双列网格压成单列，触控目标加大 ── */
+  #ckList { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .ck-top { padding: 12px 12px; gap: 12px; border-radius: 14px; }
+  .ck-ring { width: 62px; height: 62px; }
+  .ck-ring b { font-size: 17px; }
+  .ck-title { font-size: 14.5px; }
+  .ck-sub { font-size: 11.5px; }
+  #btnCkRunAll { min-height: 40px; padding: 8px 14px; }
+  .ck-settings input[type="time"] { flex: none; min-height: 34px; }
+  .ck-card { padding: 11px 12px; border-radius: 14px; gap: 6px; }
+  .ck-card .xs { min-height: 34px; }
+  .ck-foot { gap: 6px; }
+  /* 卡片底部 4 个按钮在 320px 下挤不下：放开成等宽弹性，文字少的一侧不缩 */
+  .ck-foot button { flex: 1 1 auto; padding-left: 8px; padding-right: 8px; }
+  .ck-foot .grow { flex: 0 0 100%; order: -1; }
+  .ck-when { flex: 1 1 100%; order: -2; margin-bottom: 2px; }
+  .ck-empty { padding: 30px 16px; }
+  .ck-empty-d b { color: var(--accent); }
+  .ck-add { min-height: 48px; }
+  /* 编辑弹层：贴底全宽（沿用 .dlg 的既有手机端规则），表单压成单列 */
+  .ck-form { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .ck-form .full { grid-column: auto; }
+  #ckVeil .dlg { width: 100%; }
+  #ckVeil .dlg .body { max-height: 62vh; }
+  #ckVeil textarea, #ckVeil input, #ckVeil select { font-size: 14px; }  /* 16px 以下 iOS 会自动放大，WebView 同理 */
+
   /* ── 上游 v1.12.0 新增：首页「积分到期提醒」卡片（.exp-row）──────────
      桌面端是 [色点][账号名 min-width:9em][正文] 的单行布局；窄屏上 9em 硬下限会把
      正文挤成一条，故让名字可收缩、正文整行换行。 */

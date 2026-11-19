@@ -243,17 +243,18 @@ renderUsageChart = mobileUsageChart;
   if (IS_APP) document.documentElement.classList.add('in-app');
 
   /* ── 1. 底部标签栏 ────────────────────────────────────────────────
-     5 个入口是"每天都会点"的：账号池 / 用量 / 任务 / 模型 / 更多。
-     积分构成、配置、运行日志属于低频项，留在抽屉里（点"更多"打开）。 */
+     5 个入口是"每天都会点"的：签到 / 账号池 / 任务 / 用量 / 更多。
+     积分构成、模型、配置、运行日志属于低频项，留在抽屉里（点"更多"打开）。 */
   const TABS = [
-    { v: 'accounts', t: '账号池', d: '<circle cx="8" cy="5.5" r="2.6"/><path d="M2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4"/>' },
-    { v: 'usage', t: '用量', d: '<path d="M2 13.5h12"/><path d="M4.5 13.5V8.2M8 13.5V3.5M11.5 13.5v-3"/>' },
+    { v: 'checkin', t: '签到', d: '<rect x="2.2" y="3" width="11.6" height="10.8" rx="2"/><path d="M2.2 6.4h11.6M5.4 1.6v2.6M10.6 1.6v2.6"/><path d="m5.6 10.3 1.7 1.7 3.1-3.3"/>' },
+    { v: 'accounts', t: '账号', d: '<circle cx="8" cy="5.5" r="2.6"/><path d="M2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4"/>' },
     { v: 'taskscenter', t: '任务', d: '<path d="M3 2.5h10v9H8l-3 3v-3H3z"/><path d="M6 6.5h4M6 9h2.5"/>' },
-    { v: 'models', t: '模型', d: '<path d="M8 1.8 14 5v6L8 14.2 2 11V5z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/>' },
+    { v: 'usage', t: '用量', d: '<path d="M2 13.5h12"/><path d="M4.5 13.5V8.2M8 13.5V3.5M11.5 13.5v-3"/>' },
     { v: 'more', t: '更多', d: '<circle cx="3" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="13" cy="8" r="1.3" fill="currentColor" stroke="none"/>' }
   ];
-  /* 抽屉里的低频视图归属"更多"：进这些页面时底栏高亮"更多"而不是全灭 */
-  const MORE_VIEWS = { packages: 1, config: 1, logs: 1 };
+  /* 抽屉里的低频视图归属"更多"：进这些页面时底栏高亮"更多"而不是全灭。
+     模型页从底栏移进抽屉（签到中心顶掉了它的位置），映射也归"更多"。 */
+  const MORE_VIEWS = { packages: 1, config: 1, logs: 1, models: 1 };
 
   const bar = document.createElement('nav');
   bar.className = 'tabbar';
@@ -350,6 +351,7 @@ renderUsageChart = mobileUsageChart;
     addVeil: () => typeof closeAdd === 'function' && closeAdd(),
     taskVeil: () => typeof closeTasks === 'function' && closeTasks(),
     remarkVeil: () => typeof closeRemarks === 'function' && closeRemarks(),
+    ckVeil: () => typeof closeCheckinEdit === 'function' && closeCheckinEdit(),
     vcVeil: () => { const v = document.getElementById('vcVeil'); if (v) v.classList.remove('on'); }
   };
   window.__wbBack = function () {
@@ -362,10 +364,10 @@ renderUsageChart = mobileUsageChart;
       if (closer) closer(); else veil.classList.remove('on');
       return true;
     }
-    const cur = (location.hash || '#accounts').slice(1);
-    if (cur && cur !== 'accounts') {
-      window.go('accounts');
-      history.replaceState(null, '', '#accounts');
+    const cur = (location.hash || '#checkin').slice(1);
+    if (cur && cur !== 'checkin') {
+      window.go('checkin');
+      history.replaceState(null, '', '#checkin');
       return true;
     }
     return false;

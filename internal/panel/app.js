@@ -350,12 +350,13 @@ let lastPackagesAt = 0;
 let expFetching = false;                       // 到期卡片在途标记（防重复打上游）
 const EXP_FRESH_MS = 2 * 60 * 1000;            // 缓存新鲜窗口：2 分钟内复用
 
-const TITLES = { accounts: '账号池', usage: '用量', packages: '积分构成', taskscenter: '任务中心', models: '模型与档位', config: '配置', logs: '运行日志' };
+const TITLES = { checkin: '签到中心', accounts: '账号池', usage: '用量', packages: '积分构成', taskscenter: '任务中心', models: '模型与档位', config: '配置', logs: '运行日志' };
 function go(v) {
   view = v;
   document.querySelectorAll('.view').forEach(s => s.hidden = s.id !== 'view-' + v);
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.view === v));
   $('ttl').textContent = TITLES[v];
+  if (v === 'checkin') loadCheckin();
   if (v === 'models' && !$('mdBody').children.length) loadModels();
   if (v === 'config') loadConfig();
   if (v === 'logs') loadLogs();
@@ -374,8 +375,8 @@ document.querySelectorAll('.nav a').forEach(a => a.onclick = e => { e.preventDef
    initialization"），表现为该页永远显示"读取失败"，而点导航进去一切正常。
    延迟 0ms 让整份脚本先求值完，是修这一类问题最省事也最不容易再犯的办法。 */
 setTimeout(() => {
-  const hash = (location.hash || '#accounts').slice(1);
-  go(hash in TITLES ? hash : 'accounts');
+  const hash = (location.hash || '#checkin').slice(1);
+  go(hash in TITLES ? hash : 'checkin');
 }, 0);
 
 /* ── 账号池 ───────────────────────────────────────────────────────── */
@@ -1367,6 +1368,8 @@ $('importFile').onchange = async () => {
 /* ── 顶部动作 ─────────────────────────────────────────────────────── */
 $('btnAdd').onclick = openAdd;
 $('btnRefresh').onclick = async () => {
+  // 签到中心没有上游余额可刷：刷新 = 重拉签到快照，避免每次都白打一遍 balance_all。
+  if (view === 'checkin') { await loadCheckin(); toast('已刷新', 'ok'); return; }
   const b = $('btnRefresh');
   b.disabled = true; b.textContent = '刷新中…';
   try {
@@ -1551,11 +1554,366 @@ if ($('btnCompClaimAll')) $('btnCompClaimAll').onclick = async () => {
   }
 };
 
+/* ── 签到中心（多站点每日签到）──────────────────────────────────────
+   数据面：GET /panel/api/checkin 快照（设置 + 站点卡 + 今日汇总）。
+   机密不出库：Cookie/Token 只有 cookie_set / cookie_hint / token_set，
+   编辑时留空 = 不修改；「网页登录取 Cookie」走原生桥（App 内登录后自动带回）。 */
+
+let ckData = null;           // 最近一次快照
+let ckLoading = false;       // 快照在途（防 5s 轮询叠加）
+let ckEditingId = null;      // null = 新增；否则 = 编辑中的站点 id
+let ckCookieDirty = false;   // Cookie/Token 输入框是否被用户（或原生回调）改过：
+let ckTokenDirty = false;    // 没改过就提交 null，后端保留原值
+let ckRunningAll = false;
+
+/* loadCheckin 拉快照并渲染。quiet = 轮询静默刷（不摆骨架、不抢错误提示）。 */
+async function loadCheckin(opts = {}) {
+  if (ckLoading) return;
+  ckLoading = true;
+  try {
+    ckData = await api('checkin');
+    renderCheckin();
+  } catch (e) {
+    if (!opts.quiet) $('ckSub').textContent = '读取失败：' + e.message;
+  } finally {
+    ckLoading = false;
+  }
+}
+
+/* ckSiteById 从快照里找站点视图。 */
+function ckSiteById(id) {
+  if (!ckData) return null;
+  for (const s of ckData.sites || []) if (s.id === id) return s;
+  return null;
+}
+
+/* fmtCkNext 「下次自动」短句。 */
+function fmtCkNext(iso, enabled) {
+  if (!enabled) return '自动已暂停';
+  const d = new Date(iso);
+  if (!isFinite(d.getTime())) return '';
+  const now = new Date();
+  const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  return (d.toDateString() === now.toDateString() ? '今天 ' : '明天 ') + hm + ' 自动签';
+}
+
+/* renderCheckin 全量重绘签到中心。 */
+function renderCheckin() {
+  const d = ckData;
+  if (!d) return;
+  const st = d.settings || {};
+  const sum = d.summary || {};
+  const en = sum.enabled || 0, ok = sum.ok_today || 0;
+  $('ckRing').style.setProperty('--p', en ? Math.round(ok / en * 100) : 0);
+  $('ckRingOk').textContent = String(ok);
+  $('ckRingAll').textContent = String(en);
+  let sub;
+  if (!d.sites || !d.sites.length) sub = '还没有站点，点下方「添加站点」开始';
+  else if (sum.fail_today) sub = sum.fail_today + ' 个站点签到失败，点卡片看原因';
+  else if (sum.pending) sub = '还有 ' + sum.pending + ' 个站点待签';
+  else sub = '今日已全部签完';
+  const next = fmtCkNext(d.next_run_at, st.enabled);
+  $('ckSub').textContent = sub + (next && d.sites.length ? ' · ' + next : '');
+  $('ckEnabled').checked = !!st.enabled;
+  $('ckRunAt').value = st.run_at || '08:05';
+  $('ckList').innerHTML = (d.sites || []).map(ckCardHtml).join('');
+  $('ckEmpty').hidden = !!(d.sites && d.sites.length);
+  $('btnCkAdd').hidden = !(d.sites && d.sites.length);
+  $('btnCkRunAll').disabled = !d.sites.length || !en || ckRunningAll;
+}
+
+/* ckCardHtml 单张站点卡。状态徽标 + 最近结果 + 操作按钮；失败原因可点开看全文与历史。 */
+function ckCardHtml(s) {
+  const last = s.last || {};
+  const tags = {
+    ok: '<span class="tag ok">今日已签</span>',
+    fail: '<span class="tag bad">今日失败</span>',
+    off: '<span class="tag">已停用</span>',
+    pending: '<span class="tag warn">待签到</span>'
+  };
+  const badge = tags[s.today] || tags.pending;
+  const meta = [s.type === 'auto' ? '自动识别' : '自定义模板',
+                s.cookie_set ? 'Cookie' : null, s.token_set ? 'Token' : null].filter(Boolean).join(' · ');
+  const msg = last.message || (s.today === 'pending' ? '今天还没签到' : (s.today === 'off' ? '站点已停用' : ''));
+  const msgCls = s.today === 'fail' ? 'bad' : (s.today === 'ok' ? 'ok' : '');
+  const extras = [];
+  if (last.days) extras.push('连签 ' + last.days + ' 天');
+  if (last.reward) extras.push(last.reward);
+  const when = last.at
+    ? ago(last.at) + (last.duration_ms ? ' · ' + last.duration_ms + 'ms' : '') + (extras.length ? ' · ' + esc(extras.join(' · ')) : '')
+    : '还没签过';
+  const hist = (s.history || []).slice(0, 10).map(h =>
+    '<div class="ck-hist-row"><span class="' + (h.ok ? 'h-ok' : 'h-bad') + '">' + (h.ok ? '✓' : '✗') + '</span>' +
+    '<span class="h-at">' + esc(fmtLocalDateTime(parseAPITime(h.at))) + '</span><span>' + esc(h.message || '') + '</span></div>'
+  ).join('');
+  return '<div class="ck-card' + (s.enabled ? '' : ' off') + '" data-id="' + esc(s.id) + '">' +
+    '<div class="ck-row"><div class="ck-name">' + esc(s.name) + badge + '</div>' +
+    '<label class="ck-switch" title="' + (s.enabled ? '停用' : '启用') + '">' +
+    '<input type="checkbox" data-act="toggle" data-id="' + esc(s.id) + '"' + (s.enabled ? ' checked' : '') + '><i></i></label></div>' +
+    '<div class="ck-host">' + esc(s.host || s.url) + (meta ? ' · ' + meta : '') + '</div>' +
+    '<div class="ck-msg ' + msgCls + '" data-act="msg" data-id="' + esc(s.id) + '" title="点击展开/收起">' + esc(msg) + '</div>' +
+    (hist ? '<div class="ck-hist" data-hist="' + esc(s.id) + '" hidden>' + hist + '</div>' : '') +
+    '<div class="ck-foot"><span class="ck-when">' + when + '</span><span class="grow"></span>' +
+    '<button class="xs" data-act="run" data-id="' + esc(s.id) + '">签到</button>' +
+    '<button class="xs" data-act="edit" data-id="' + esc(s.id) + '">编辑</button>' +
+    '<button class="xs" data-act="hist" data-id="' + esc(s.id) + '">历史</button>' +
+    '<button class="xs" data-act="del" data-id="' + esc(s.id) + '">删除</button>' +
+    '</div></div>';
+}
+
+/* 站点卡事件委托：列表只绑一次，重渲染不丢。 */
+$('ckList').addEventListener('click', async ev => {
+  const t = ev.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.dataset.act, id = t.dataset.id;
+  const site = ckSiteById(id);
+  if (act === 'edit' && site) { openCheckinEdit(site); return; }
+  if (act === 'msg') {
+    t.classList.toggle('open');
+    const hist = document.querySelector('[data-hist="' + id + '"]');
+    if (hist) hist.hidden = !t.classList.contains('open');
+    return;
+  }
+  if (act === 'hist') {
+    const hist = document.querySelector('[data-hist="' + id + '"]');
+    if (!hist) { toast('还没有历史记录'); return; }
+    hist.hidden = !hist.hidden;
+    return;
+  }
+  if (act === 'run') {
+    if (t.disabled) return;
+    t.disabled = true; t.textContent = '…';
+    try {
+      const d = await api('checkin/sites/' + id + '/run', { method: 'POST', body: '{}' });
+      toast((d.result && d.result.ok ? '签到成功：' : '签到失败：') + ((d.result && d.result.message) || ''), d.result && d.result.ok ? 'ok' : 'err');
+      await loadCheckin();
+    } catch (e) { toast('签到失败：' + e.message, 'err'); await loadCheckin({ quiet: true }); }
+    return;
+  }
+  if (act === 'del') {
+    if (!confirm('删除站点「' + ((site && site.name) || '') + '」？配置与历史会一并删除。')) return;
+    try {
+      await api('checkin/sites/' + id + '/delete', { method: 'POST', body: '{}' });
+      toast('已删除', 'ok');
+      await loadCheckin();
+    } catch (e) { toast('删除失败：' + e.message, 'err'); }
+    return;
+  }
+});
+
+/* 启用开关走 change：click 之后 checkbox 才翻转，change 才是准确语义。 */
+$('ckList').addEventListener('change', async ev => {
+  const t = ev.target.closest('[data-act="toggle"]');
+  if (!t) return;
+  const id = t.dataset.id;
+  const want = t.checked;
+  try {
+    await api('checkin/sites/' + id, { method: 'POST', body: JSON.stringify({ enabled: want }) });
+    toast(want ? '已启用' : '已停用', 'ok');
+    await loadCheckin({ quiet: true });
+  } catch (e) {
+    toast('保存失败：' + e.message, 'err');
+    t.checked = !want;
+  }
+});
+
+/* ── 一键签到 ─────────────────────────────────────────────────────── */
+$('btnCkRunAll').addEventListener('click', async () => {
+  if (ckRunningAll) return;
+  ckRunningAll = true;
+  const b = $('btnCkRunAll');
+  b.disabled = true; b.textContent = '签到中…';
+  $('ckBar').hidden = false;
+  $('ckBarText').textContent = '正在给所有启用的站点发签到请求…';
+  try {
+    const d = await api('checkin/run_all', { method: 'POST', body: '{}' });
+    const sum = d.summary || {};
+    const ok = sum.ok_today || 0, fail = sum.fail_today || 0;
+    toast('签到完成：成功 ' + ok + ' / 失败 ' + fail, fail ? 'err' : 'ok');
+  } catch (e) {
+    toast('签到失败：' + e.message, 'err');
+  } finally {
+    ckRunningAll = false;
+    b.disabled = false; b.textContent = '一键签到';
+    $('ckBar').hidden = true;
+    await loadCheckin();
+  }
+});
+
+/* ── 自动签到设置 ─────────────────────────────────────────────────── */
+$('btnCkSaveSet').addEventListener('click', async () => {
+  const body = JSON.stringify({ enabled: $('ckEnabled').checked, run_at: $('ckRunAt').value || '08:05' });
+  try {
+    const d = await api('checkin/settings', { method: 'POST', body });
+    ckData.settings = d.settings;
+    if (ckData) ckData.next_run_at = '';
+    toast('自动签到已保存（' + (d.settings.enabled ? '每天 ' + d.settings.run_at : '已暂停') + '）', 'ok');
+    await loadCheckin({ quiet: true });
+  } catch (e) {
+    toast('保存失败：' + e.message, 'err');
+  }
+});
+
+/* ── 添加 / 编辑站点 ──────────────────────────────────────────────── */
+
+/* parseHeaderLines "Key: Value" 文本 → 对象（空行与无冒号行跳过）。 */
+function parseHeaderLines(text) {
+  const out = {};
+  for (const line of String(text || '').split('\n')) {
+    const i = line.indexOf(':');
+    if (i <= 0) continue;
+    const k = line.slice(0, i).trim(), v = line.slice(i + 1).trim();
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
+/* headersToText 对象 → "Key: Value" 文本（表单回显）。 */
+function headersToText(h) {
+  return Object.keys(h || {}).map(k => k + ': ' + h[k]).join('\n');
+}
+
+/* openCheckinEdit 打开弹层。site 缺省 = 新增。 */
+function openCheckinEdit(site) {
+  ckEditingId = site ? site.id : null;
+  ckCookieDirty = false;
+  ckTokenDirty = false;
+  $('ckDlgTitle').textContent = site ? '编辑站点' : '添加站点';
+  $('ckName').value = site ? site.name : '';
+  $('ckURL').value = site ? site.url : '';
+  $('ckCookie').value = '';
+  $('ckCookie').placeholder = site ? '已保存（留空 = 不修改）' : '登录后从浏览器复制整串 Cookie（App 内可一键获取）';
+  $('ckToken').value = '';
+  $('ckNote').value = site ? (site.note || '') : '';
+  const tpl = (site && site.custom) || {};
+  $('ckType').value = site ? (site.type || 'auto') : 'auto';
+  $('ckOKKw').value = tpl.ok_kw || '';
+  $('ckMethod').value = (tpl.method || 'POST').toUpperCase();
+  $('ckPath').value = tpl.path || '';
+  $('ckHeaders').value = headersToText(tpl.headers);
+  $('ckBody').value = tpl.body || '';
+  $('ckBadKw').value = tpl.bad_kw || '';
+  $('ckJSONPath').value = tpl.json_path || '';
+  ckSyncTplGroup();
+  $('ckTestRes').hidden = true;
+  $('ckVeil').classList.add('on');
+  setTimeout(() => $('ckName').focus(), 60);
+}
+
+/* closeCheckinEdit 关弹层（返回键与 VEIL_CLOSER 都会调）。 */
+function closeCheckinEdit() { $('ckVeil').classList.remove('on'); }
+window.openCheckinEdit = openCheckinEdit;
+window.closeCheckinEdit = closeCheckinEdit;
+
+/* ckSyncTplGroup 自定义模板字段随类型折叠。 */
+function ckSyncTplGroup() { $('ckTplGroup').hidden = $('ckType').value !== 'template'; }
+$('ckType').addEventListener('change', ckSyncTplGroup);
+
+$('btnCkAdd').addEventListener('click', () => openCheckinEdit(null));
+$('btnCkAddEmpty').addEventListener('click', () => openCheckinEdit(null));
+$('btnCkClose').addEventListener('click', closeCheckinEdit);
+
+/* 网页登录取 Cookie：App 内打开站点登录页，完成后由原生回调 __ckCookie 带回。 */
+$('btnCkLogin').addEventListener('click', () => {
+  const u = $('ckURL').value.trim();
+  if (!u) { toast('先填写站点网址'); return; }
+  if (window.AndroidBridge && window.AndroidBridge.openLogin) {
+    AndroidBridge.openLogin(u);
+    toast('登录完成后点右上角「完成」', '');
+  } else {
+    toast('当前环境不支持，请在浏览器登录后手动复制 Cookie 粘贴进来');
+  }
+});
+
+/* __ckCookie 原生回调：cookie 一定是字符串；storage 是 localStorage 快照 JSON
+   （不少中转站把 access_token 存在 localStorage，只有 Cookie 会 401）。
+   弹层没开时只提示不报错——回调永远可能晚于页面状态变化到达。 */
+window.__ckCookie = function (cookie, storage) {
+  const veil = document.getElementById('ckVeil');
+  if (!veil || !veil.classList.contains('on')) { toast('已收到 Cookie，请先打开站点编辑再获取'); return; }
+  const v = String(cookie == null ? '' : cookie).trim();
+  if (!v) { toast('没有拿到 Cookie：确认已登录成功再点「完成」'); return; }
+  $('ckCookie').value = v;
+  ckCookieDirty = true;
+  let msg = '已获取 Cookie，记得保存';
+  try {
+    const o = JSON.parse(String(storage || '{}'));
+    if (o && typeof o === 'object' && !$('ckToken').value) {
+      for (const k of ['access_token', 'accessToken', 'token', 'key', 'api_key']) {
+        const val = o[k];
+        if (typeof val === 'string' && val.length >= 1 && val.length <= 4096 && !/\s/.test(val)) {
+          $('ckToken').value = val;
+          ckTokenDirty = true;
+          msg = '已获取 Cookie（含 Token），记得保存';
+          break;
+        }
+      }
+    }
+  } catch (e) { /* storage 解析失败不影响 Cookie 本身 */ }
+  toast(msg, 'ok');
+};
+
+/* ckFormInput 把表单收成 Input JSON。Cookie/Token 没动过 → null（后端保留原值）。 */
+function ckFormInput() {
+  const tpl = $('ckType').value === 'template';
+  return {
+    name: $('ckName').value.trim(),
+    url: $('ckURL').value.trim(),
+    type: $('ckType').value,
+    cookie: ckCookieDirty ? $('ckCookie').value.trim() : null,
+    token: ckTokenDirty ? $('ckToken').value.trim() : null,
+    method: tpl ? $('ckMethod').value : '',
+    path: tpl ? $('ckPath').value.trim() : '',
+    headers: tpl ? parseHeaderLines($('ckHeaders').value) : null,
+    body: tpl ? $('ckBody').value : '',
+    success_keyword: tpl ? $('ckOKKw').value.trim() : ($('ckOKKw').value.trim() || ''),
+    failure_keyword: tpl ? $('ckBadKw').value.trim() : '',
+    success_json_path: tpl ? $('ckJSONPath').value.trim() : '',
+    note: $('ckNote').value.trim()
+  };
+}
+
+/* 保存（新增与编辑同一条路径）。 */
+$('btnCkSave').addEventListener('click', async () => {
+  const body = JSON.stringify(ckFormInput());
+  const url = ckEditingId ? 'checkin/sites/' + ckEditingId : 'checkin/sites';
+  try {
+    await api(url, { method: 'POST', body });
+    toast('已保存', 'ok');
+    closeCheckinEdit();
+    await loadCheckin();
+  } catch (e) {
+    toast('保存失败：' + e.message, 'err');
+  }
+});
+
+/* 测试：不落库直接按表单发一次真实请求，结果条就地显示。 */
+$('btnCkTest').addEventListener('click', async () => {
+  const b = $('btnCkTest');
+  b.disabled = true;
+  const res = $('ckTestRes');
+  res.hidden = false;
+  res.className = 'state';
+  res.textContent = '正在发送测试请求…';
+  try {
+    const d = await api('checkin/test', { method: 'POST', body: JSON.stringify(ckFormInput()) });
+    const r = d.result || {};
+    res.className = 'state ' + (r.ok ? 'ok' : 'err');
+    res.textContent = (r.ok ? '测试成功' : '测试失败') + (r.status ? '（HTTP ' + r.status + '）' : '') + '：' + (r.message || '');
+  } catch (e) {
+    res.className = 'state err';
+    res.textContent = '测试失败：' + e.message;
+  } finally {
+    b.disabled = false;
+  }
+});
+
 /* ── 轮询 ─────────────────────────────────────────────────────────── */
 function refreshVisible() {
   if (view === 'accounts') { loadOverview(true); renderCachedCompensation(); }
   else if (view === 'logs') loadLogs();
   else if (view === 'taskscenter') reattachQueueView();
+  else if (view === 'checkin') { if (!$('ckVeil').classList.contains('on')) loadCheckin({ quiet: true }); }
 }
 function start() {
   loadOverview(true);
