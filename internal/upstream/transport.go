@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/linguo2625469/workbuddy2api-panel/internal/netca"
 )
 
 // 连接层参数集中定义（与 server/backoff.go 同风格：一处定义，测试可回读断言）。
@@ -86,6 +88,9 @@ func newTransport() *http.Transport {
 		ResponseHeaderTimeout: responseHeaderTimeout,
 		// 自动读取环境变量中的代理配置
 		Proxy: http.ProxyFromEnvironment,
+		// RootCAs 必须显式指定：Android 上 Go 找不到系统根证书（SystemCertPool 为空），
+		// 不设这一项，手机上所有出站 HTTPS 都会死在 "unknown authority"。
+		TLSClientConfig: &tls.Config{RootCAs: netca.Pool()},
 	}
 }
 

@@ -3,6 +3,7 @@ package checkin
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/linguo2625469/workbuddy2api-panel/internal/netca"
 )
 
 // maxBody 响应体读取上限。签到接口的响应都是几百字节的小 JSON；
@@ -52,6 +55,9 @@ func NewRunner() *Runner {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 20 * time.Second,
 			MaxIdleConnsPerHost:   2,
+			// 根证书池显式指定：Android 上 Go 的 SystemCertPool 是空的，
+			// 不设这一项，手机上给「其他网站」签到会全部失败于 unknown authority。
+			TLSClientConfig: &tls.Config{RootCAs: netca.Pool(), MinVersion: tls.VersionTLS12},
 		},
 		// 最多 5 跳；跳到非 http(s) 直接停，避免 file:// 之类被当成重定向目标。
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
