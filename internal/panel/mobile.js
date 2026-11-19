@@ -274,8 +274,21 @@ renderUsageChart = mobileUsageChart;
   document.body.appendChild(bar);
 
   /* syncTabs 把当前视图映射回 5 个入口之一（低频页 → 更多）。 */
+  /* currentView 当前视图：优先 hash，拿不到就看「DOM 里真正没被 hidden 的那一页」。
+     为什么不能只信 hash：首次启动时 hash 是空的，而 app.js 的初始 go() 是
+     setTimeout(0) 排的——两个 <script> 各占一个任务，定时器完全可能在 mobile.js
+     求值之前就插进来跑完。那之后若按 hash 推断，会退到默认值 accounts：
+     页面已经是签到中心，底栏却高亮「账号」（用户看到的正是这个）。
+     以 DOM 为准，两种执行顺序都能对上。 */
+  function currentView() {
+    const h = (location.hash || '').slice(1);
+    if (h) return h;
+    const shown = document.querySelector('.view:not([hidden])');
+    if (shown && shown.id.indexOf('view-') === 0) return shown.id.slice(5);
+    return 'checkin';
+  }
   function syncTabs(v) {
-    const cur = v || (location.hash || '#accounts').slice(1);
+    const cur = v || currentView();
     const key = MORE_VIEWS[cur] ? 'more' : cur;
     bar.querySelectorAll('a').forEach(a => a.classList.toggle('on', a.dataset.tab === key));
   }
@@ -290,6 +303,10 @@ renderUsageChart = mobileUsageChart;
     document.title = 'WorkBuddy2API · ' + ((document.getElementById('ttl') || {}).textContent || '');
   };
   syncTabs();
+  // 补一次延迟同步：app.js 的初始 go() 是 setTimeout(0)，有可能排在本次求值之后。
+  // 用 microtask + 一次宏任务各补一次，代价可忽略，彻底消除「先渲染后跳转」的窗口。
+  Promise.resolve().then(() => syncTabs());
+  setTimeout(() => syncTabs(), 0);
 
   bar.addEventListener('click', ev => {
     const a = ev.target.closest('a');

@@ -376,7 +376,11 @@ document.querySelectorAll('.nav a').forEach(a => a.onclick = e => { e.preventDef
    延迟 0ms 让整份脚本先求值完，是修这一类问题最省事也最不容易再犯的办法。 */
 setTimeout(() => {
   const hash = (location.hash || '#checkin').slice(1);
-  go(hash in TITLES ? hash : 'checkin');
+  const v = hash in TITLES ? hash : 'checkin';
+  go(v);
+  // 首次进入把视图写回 hash：底栏高亮（mobile.js 的 currentView）与返回键
+  // （__wbBack 按 hash 判断当前页）都读它，留着空 hash 会让两边各说各话。
+  if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
 }, 0);
 
 /* ── 账号池 ───────────────────────────────────────────────────────── */
