@@ -1,8 +1,10 @@
 package checkin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -499,7 +501,9 @@ func TestServiceRunAllAndSnapshot(t *testing.T) {
 	if snap.Sites[0].Today != "ok" || snap.Sites[0].CookieSet != true {
 		t.Fatalf("snap=%+v", snap.Sites[0])
 	}
-	if snap.Sites[0].CookieHint == "" || len(snap.Sites[0].CookieHint) > 6 {
+	// 按字符数而不是字节数断言：提示以「…」开头，它是 3 字节的多字节字符，
+	// 按 len() 数会永远超限（"…****" 是 7 字节 5 字符），属于断言的度量写错了。
+	if snap.Sites[0].CookieHint == "" || len([]rune(snap.Sites[0].CookieHint)) > 6 {
 		t.Fatalf("Cookie 提示应只有末 4 位: %q", snap.Sites[0].CookieHint)
 	}
 	if len(snap.Sites[0].History) != 1 {
@@ -653,4 +657,116 @@ func contains(s, sub string) bool {
 		}
 		return false
 	})()
+}
+
+// ── 回归：试运行与响应截断的缺陷 ─────────────────────────────────────────
+
+func TestServiceTestReusesSavedSecret(t *testing.T) {
+	// 假站点只认这一个 Cookie：编辑态「测试」不带凭证时必须复用库里的旧值，
+	// 否则真实站点回 401，用户会以为是站点坏了。
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != "k=v" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "未登录"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "签到成功"})
+	}))
+	defer srv.Close()
+
+	svc := NewService(filepath.Join(t.TempDir(), "checkin-sites.json"))
+	created, err := svc.Create(Input{Name: "T站", URL: srv.URL, Type: TypeAuto, Cookie: strPtr("k=v")})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 编辑弹层不回显机密：前端只带 id 和站点基本信息，Cookie 为 nil（不修改）。
+	// 修复前 applyInput 会因 Cookie/Token 都为空直接返回校验错误，根本跑不到请求。
+	res, err := svc.Test(context.Background(), Input{
+		ID: created.ID, Name: created.Name, URL: created.URL, Type: TypeAuto,
+	})
+	if err != nil {
+		t.Fatalf("带 id 的测试应复用已存凭证，却返回错误：%v", err)
+	}
+	if !res.OK {
+		t.Fatalf("复用已存 Cookie 后应签到成功，实际 %s（status=%d）", res.Message, res.Status)
+	}
+}
+
+func TestServiceTestAllowsEmptySecretForNewSite(t *testing.T) {
+	// 新建弹层里用户还没填凭证就点「测试」：应真的发一次请求，把站点的 401
+	// 当提示回给用户，而不是被本地「至少填一个」的校验挡住（那样看不到站点通不通）。
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "unauthorized"})
+	}))
+	defer srv.Close()
+
+	svc := NewService(filepath.Join(t.TempDir(), "checkin-sites.json"))
+	res, err := svc.Test(context.Background(), Input{Name: "新站", URL: srv.URL, Type: TypeAuto})
+	if err != nil {
+		t.Fatalf("无凭证的新建测试不应在本地校验失败：%v", err)
+	}
+	if res.OK {
+		t.Fatal("站点回 401，结果应为失败")
+	}
+	if !contains(res.Message, "401") && !contains(res.Message, "Cookie") {
+		t.Fatalf("失败原因应提示 401/Cookie：%s", res.Message)
+	}
+}
+
+func TestServiceTestUnknownIDFallsBackToEmptySecret(t *testing.T) {
+	// 站点被删掉后，编辑器里还留着旧 id：点「测试」不能报「站点不存在」，
+	// 应退回成「无凭证跑一次」，让用户看到站点自己的 401。
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "unauthorized"})
+	}))
+	defer srv.Close()
+
+	svc := NewService(filepath.Join(t.TempDir(), "checkin-sites.json"))
+	res, err := svc.Test(context.Background(), Input{
+		ID: "c_deadbeef", Name: "旧站", URL: srv.URL, Type: TypeAuto,
+	})
+	if err != nil {
+		t.Fatalf("不存在的 id 应退回无凭证执行，却返回错误：%v", err)
+	}
+	if res.OK {
+		t.Fatal("站点回 401，结果应为失败")
+	}
+	if !contains(res.Message, "401") && !contains(res.Message, "Cookie") {
+		t.Fatalf("失败原因应提示 401/Cookie：%s", res.Message)
+	}
+}
+
+// countingReader 记录真正被读走的字节数，用来断言 reader 是否已读到底。
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+func TestReadBodyDrainsAfterTruncation(t *testing.T) {
+	// 响应超过上限时：raw 只留 maxBody，但剩余字节必须继续读进 Discard。
+	// 否则 http.Response.Body 没读到底就 Close，连接被丢弃无法复用——
+	// auto 模式一次要探测多个端点，每条都重新握手会让一键签到明显变慢。
+	const extra = 5000
+	total := maxBody + extra
+	cr := &countingReader{r: bytes.NewReader(bytes.Repeat([]byte("a"), total))}
+
+	raw, truncated := readBody(io.NopCloser(cr))
+	if len(raw) != maxBody {
+		t.Fatalf("截断后长度应为 %d，实际 %d", maxBody, len(raw))
+	}
+	if !truncated {
+		t.Fatal("超上限应标记为已截断")
+	}
+	// 修复前这里只读到 maxBody+1 就停（剩余 4999 字节没人读）。
+	if cr.n != total {
+		t.Fatalf("截断后应把剩余字节排空：已读 %d，总长 %d", cr.n, total)
+	}
 }

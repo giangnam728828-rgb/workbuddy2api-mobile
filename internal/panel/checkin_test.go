@@ -230,3 +230,45 @@ func TestCheckinAPIRequiresAuth(t *testing.T) {
 		t.Fatalf("无密钥应 401，实际 %d", rec.Code)
 	}
 }
+
+// TestCheckinAPITestReusesSavedSecret 回归「编辑态测试必然 401」：
+// 前端编辑弹层不回显机密，只改备注就点「测试」时请求里没有 cookie，
+// 但带了站点 id。后端必须用 id 取回已保存的凭证，否则假站点回 401、
+// 端点回 400，用户看起来像「站点坏了」。
+func TestCheckinAPITestReusesSavedSecret(t *testing.T) {
+	upstreamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != "session=abcd1234" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "未登录"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "message": "签到成功"})
+	}))
+	defer upstreamSrv.Close()
+
+	_, h := newCheckinPanel(t)
+
+	// 先正常建站，把凭证存进库里。
+	cookie := "session=abcd1234"
+	body, _ := json.Marshal(map[string]any{
+		"name": "编辑态", "url": upstreamSrv.URL, "type": "auto", "cookie": cookie,
+	})
+	code, out := callCheckinAPI(t, h, "POST", "/panel/api/checkin/sites", string(body))
+	if code != 200 {
+		t.Fatalf("create code=%d out=%v", code, out)
+	}
+	id := out["site"].(map[string]any)["id"].(string)
+
+	// 编辑弹层提交：带 id、不带 cookie（留空 = 不修改）。
+	testBody, _ := json.Marshal(map[string]any{
+		"id": id, "name": "编辑态", "url": upstreamSrv.URL, "type": "auto",
+	})
+	code, out = callCheckinAPI(t, h, "POST", "/panel/api/checkin/test", string(testBody))
+	if code != 200 {
+		t.Fatalf("编辑态测试应复用已存凭证并回 200，实际 %d out=%v", code, out)
+	}
+	res := out["result"].(map[string]any)
+	if res["ok"] != true {
+		t.Fatalf("应签到成功，实际 result=%v", res)
+	}
+}

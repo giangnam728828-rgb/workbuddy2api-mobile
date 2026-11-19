@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -387,18 +388,23 @@ func (s *Service) History(id string, limit int) []Result {
 	return nil
 }
 
-// isBusy 是否有全量签到在跑（TryLock 试一下立刻还回去）。
-func (s *Service) isBusy() bool {
-	if s.runMu.TryLock() {
-		s.runMu.Unlock()
+// isBusy 是否有全量签到在跑。读 running 标记而不是试探锁：试探锁会与
+// 真正的 RunAll 抢同一把锁，把「没人跑」误判成「正在跑」。
+func (s *Service) isBusy() bool { return s.running.Load() }
+
+// tryBeginRun/endRun 全量签到互斥的进入/退出。锁保证互斥，running 只做展示。
+func (s *Service) tryBeginRun() bool {
+	if !s.runMu.TryLock() {
 		return false
 	}
+	s.running.Store(true)
 	return true
 }
 
-// tryBeginRun/endRun 全量签到互斥的进入/退出。
-func (s *Service) tryBeginRun() bool { return s.runMu.TryLock() }
-func (s *Service) endRun()           { s.runMu.Unlock() }
+func (s *Service) endRun() {
+	s.running.Store(false)
+	s.runMu.Unlock()
+}
 
 // logResult 单次结果落日志（不带机密）。
 func logResult(site Site, res Result) {
