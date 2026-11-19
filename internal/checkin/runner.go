@@ -3,7 +3,6 @@ package checkin
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/linguo2625469/workbuddy2api-panel/internal/netca"
+	"github.com/linguo2625469/workbuddy2api-panel/internal/outnet"
 )
 
 // maxBody 响应体读取上限。签到接口的响应都是几百字节的小 JSON；
@@ -49,16 +48,13 @@ type Runner struct {
 // 这样连 Redirect 也受同一个 deadline 约束）。
 func NewRunner() *Runner {
 	return &Runner{client: &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 20 * time.Second,
-			MaxIdleConnsPerHost:   2,
-			// 根证书池显式指定：Android 上 Go 的 SystemCertPool 是空的，
-			// 不设这一项，手机上给「其他网站」签到会全部失败于 unknown authority。
-			TLSClientConfig: &tls.Config{RootCAs: netca.Pool(), MinVersion: tls.VersionTLS12},
-		},
+		// 出站连接统一走 outnet：DNS（Android 没有 resolv.conf）+ 根证书（没有系统池）
+		// 两件事都在里面，漏一个就是「连不上」或「unknown authority」。
+		Transport: func() *http.Transport {
+			t := outnet.NewTransport()
+			t.ResponseHeaderTimeout = 20 * time.Second
+			return t
+		}(),
 		// 最多 5 跳；跳到非 http(s) 直接停，避免 file:// 之类被当成重定向目标。
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {

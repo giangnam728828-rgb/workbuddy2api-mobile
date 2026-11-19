@@ -11,7 +11,6 @@ package panel
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,7 +21,7 @@ import (
 	"time"
 
 	"github.com/linguo2625469/workbuddy2api-panel/internal/auth"
-	"github.com/linguo2625469/workbuddy2api-panel/internal/netca"
+	"github.com/linguo2625469/workbuddy2api-panel/internal/outnet"
 )
 
 const (
@@ -55,13 +54,7 @@ func loginEndpoints(realm string) (state, token, account, origin string) {
 // 必须显式带 RootCAs：Android 上 Go 读不到系统根证书（SystemCertPool 为空），
 // 不加这一行，在手机上点「获取授权链接」会直接失败于
 // "x509: certificate signed by unknown authority" —— 连账号都加不了。
-var loginHTTP = &http.Client{
-	Timeout: 30 * time.Second,
-	Transport: &http.Transport{
-		Proxy:           http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{RootCAs: netca.Pool(), MinVersion: tls.VersionTLS12},
-	},
-}
+var loginHTTP = &http.Client{Timeout: 30 * time.Second, Transport: outnet.NewTransport()}
 
 func commonHeaders(req *http.Request, origin string) {
 	req.Header.Set("Content-Type", "application/json")

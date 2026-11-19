@@ -26,6 +26,7 @@ import (
 	"github.com/linguo2625469/workbuddy2api-panel/internal/checkin"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/credithist"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/livecfg"
+	"github.com/linguo2625469/workbuddy2api-panel/internal/outnet"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/panel"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/pool"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/redisstore"
@@ -178,6 +179,10 @@ func main() {
 	// DNS：Android 没有 /etc/resolv.conf，Go 的纯 Go 解析器会退回 127.0.0.1/::1，
 	// 于是查任何域名都变成"连本机 53 端口"（dial tcp: lookup copilot.tencent.com
 	// on [::1]:53: connection refused）。配了 dns_servers / WB2A_DNS 就显式指定。
+	// 出站统一配置：面板登录、外部签到等「另起的 http.Client」都从这里拿
+	// DialContext / 根证书，避免各自漏配（Android 上漏 DNS 就连不上，
+	// 漏根证书就是 unknown authority）。空列表 = 用系统解析器（桌面正常）。
+	outnet.SetDNSServers(cfg.DNSServers)
 	if len(cfg.DNSServers) > 0 {
 		d := upstream.NewDNSDialer(cfg.DNSServers)
 		up.SetDNSDialer(d)
@@ -186,6 +191,11 @@ func main() {
 			t.DialContext = d.DialContext
 		}
 		log.Printf("DNS: 出站解析用 %v（不走系统 /etc/resolv.conf）", cfg.DNSServers)
+	} else {
+		// Android 上这是硬故障：没有 /etc/resolv.conf 时 Go 会退回 [::1]:53，
+		// 所有域名解析失败（dial tcp: lookup xxx on [::1]:53: connection refused）。
+		// 桌面/Docker 正常，所以只提示不报错。
+		log.Printf("DNS: 未配置 dns_servers，使用系统解析器（Android 上会失败；配置里请填 223.5.5.5）")
 	}
 	// model.json 本地缓存接线（context_length/max_output_tokens 四级查找链第 3 级）：
 	// 数据目录与 state.json 同风格（Docker volume 持久化路径）。首次缺失/损坏自动
