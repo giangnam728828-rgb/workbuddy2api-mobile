@@ -16,6 +16,11 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	// 内嵌 IANA 时区库（约 450KB）。没有它，Go 只能去 /usr/share/zoneinfo 找时区：
+	// Android 没有这个目录、精简版 Docker 镜像也常没有，于是 initLocal 静默退回 UTC——
+	// 所有定点任务（签到/旅行/保活/夜猫子/自动签到）整体错 8 小时，
+	// 而日志里的时间戳看起来「像 UTC」，不留心根本发现不了。
+	_ "time/tzdata"
 
 	"github.com/linguo2625469/workbuddy2api-panel/internal/auth"
 	"github.com/linguo2625469/workbuddy2api-panel/internal/checkin"
@@ -402,11 +407,34 @@ func main() {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
+	logTimeZone()
 	log.Printf("workbuddy2api listening on %s (api_key=%v)，管理面板 http://127.0.0.1%s/panel/", cfg.Listen, cfg.APIKey != "", panelListenPath(cfg.Listen))
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http: %v", err)
 	}
 	log.Printf("bye")
+}
+
+// logTimeZone 打印实际生效的本地时区，并在「TZ 设了却没生效」时给出明确告警。
+//
+// 为什么值得单独打一行：时区解析失败是**静默**的——Go 找不到时区数据就退回 UTC，
+// 进程照常运行、日志照常输出，只是所有定点任务晚 8 小时。之前的 TZ=CST-8 就踩了这个坑
+// （Go 不解析 POSIX 时区串，Android 也没有 zoneinfo 目录），而日志里的时间是 UTC，
+// 看起来「挺正常」。现在时区库已内嵌（import _ "time/tzdata"），这里把结果摊开。
+func logTimeZone() {
+	now := time.Now()
+	name, offset := now.Zone()
+	sign := "+"
+	if offset < 0 {
+		sign = "-"
+		offset = -offset
+	}
+	log.Printf("时区: %s UTC%s%02d:%02d（TZ=%q，本地时间 %s）",
+		name, sign, offset/3600, offset%3600/60, os.Getenv("TZ"), now.Format("2006-01-02 15:04"))
+	if tz := os.Getenv("TZ"); tz != "" && name == "UTC" {
+		log.Printf("警告: TZ=%q 未能解析，已退回 UTC——定时任务会按 UTC 触发。"+
+			"请改成 IANA 名称（如 Asia/Shanghai）；若运行环境没有 zoneinfo，需内嵌 time/tzdata", tz)
+	}
 }
 
 // warmModelRates 启动预热各域模型积分倍率表（供积分保底的目录兜底判定）。

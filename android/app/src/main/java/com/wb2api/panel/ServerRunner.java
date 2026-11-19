@@ -137,7 +137,10 @@ public final class ServerRunner {
         Map<String, String> env = pb.environment();
         // Android 没有 /usr/share/zoneinfo：用 POSIX 时区串（UTC+8 无夏令时），
         // 否则定时任务会按 UTC 触发，签到/旅行时间全错。
-        env.put("TZ", "CST-8");
+        // TZ 用 IANA 名称，不用 POSIX 串：Go 不解析 "CST-8"，而 Android 没有
+        // /usr/share/zoneinfo，两者叠加会让进程静默退回 UTC，所有定点任务错 8 小时。
+        // 内核已内嵌 time/tzdata，所以这里只要能给出 IANA 名称就能解析成功。
+        env.put("TZ", "Asia/Shanghai");
         env.put("HOME", ctx.getFilesDir().getAbsolutePath());
         env.put("TMPDIR", ctx.getCacheDir().getAbsolutePath());
         env.put("GODEBUG", "netdns=go");
