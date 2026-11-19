@@ -46,6 +46,7 @@
 | 手机专用界面 | 底部标签栏 + 贴底弹层 + 下拉刷新 + 逐层返回 + 安全区适配，**任何页面都不需要缩放或横向拖动** |
 | 后台常驻 | 前台服务 + 通知栏，切后台 / 锁屏后网关继续跑，同机其它 App 可直接调 `127.0.0.1:7863` |
 | 一键出包 | `.github/workflows/android-apk.yml`：push 即构建，打 `v*` tag 自动发 Release |
+| **多站点签到中心** | 把**其他网站**的每日签到也收进 App：填网址 →「网页登录取 Cookie」（App 内登录，自动抓含 HttpOnly 的 Cookie）→ 一键全签；支持每日定时自动签；new-api / one-api 系自动识别，其余站用自定义模板（请求方式 / 路径 / 请求头 / 请求体 / 成功判定） |
 
 - 下载：仓库 **Releases** 里的 `WorkBuddy2API-*.apk`（或 Actions 的 `WorkBuddy2API-apk` artifact）
 - 安装：Android 7.0+ / arm64，允许「安装未知来源应用」即可，无需 root
