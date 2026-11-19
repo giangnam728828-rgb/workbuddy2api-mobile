@@ -3,6 +3,9 @@ auths/
 data/
 *.key
 *.pem
+# 例外：CA 根证书基线是公开数据（Mozilla 根证书库），不是密钥；
+# 它被 go:embed 进二进制，漏提交会让 CI 在编译期失败（"pattern certs.pem: no matching files"）。
+!internal/netca/certs.pem
 *.env
 .env
 .env.*
