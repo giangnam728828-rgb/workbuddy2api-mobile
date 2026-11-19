@@ -58,3 +58,6 @@ android/.kotlin/
 *.aab
 # 允许 Android 目录下的说明文档（仓库根规则忽略 *.md）
 !android/*.md
+
+# 本地编译产物（go build ./cmd/server 会在仓库根生成 server）
+/server

@@ -84,7 +84,7 @@ jobs:
           cd android
           ./gradlew --no-daemon assembleRelease \
             -Pwb2apiVersionCode=$((11300 + VERSION_CODE)) \
-            -Pwb2apiVersionName=1.13.1
+            -Pwb2apiVersionName=1.14.0
 
       # 签名指纹断言：证书一旦被换掉（例如误用 debug key、keystore 丢失后重建），
       # 老用户就无法覆盖安装。这里直接让构建失败，比发出去再被用户发现好。
@@ -107,7 +107,7 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/*.apk "dist/WorkBuddy2API-1.13.1.apk"
+          cp android/app/build/outputs/apk/release/*.apk "dist/WorkBuddy2API-1.14.0.apk"
           ls -lh dist
 
       - name: Upload artifact

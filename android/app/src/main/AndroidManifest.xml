@@ -36,5 +36,13 @@
             android:name=".ServerService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 网页登录取 Cookie（签到中心）：独立 WebView，只由面板 JS 桥拉起，不对外暴露。 -->
+        <activity
+            android:name=".LoginWebActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|smallestScreenSize|screenLayout|density"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

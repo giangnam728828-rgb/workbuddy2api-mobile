@@ -31,6 +31,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -48,6 +50,8 @@ import java.net.URL;
 public class MainActivity extends Activity {
 
     private static final int REQ_NOTIF = 1001;
+    /** 网页登录取 Cookie（签到中心用）。 */
+    private static final int REQ_LOGIN = 1002;
     private static final int DARK_BG = 0xFF0C0E14;
     private static final int DARK_BAR = 0xFF10131A;
     private static final int LIGHT_BG = 0xFFF4F5F8;
@@ -420,6 +424,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* ── 网页登录取 Cookie：结果回传给面板（签到中心）────────────────────
+       独立 Activity 里登录，拿到的是 CookieManager 里的完整 Cookie（含 HttpOnly），
+       比让用户在手机浏览器里手动导出靠谱得多。回传只用 evaluateJavascript，
+       数据不进 Intent 之外的任何持久化路径。 */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_LOGIN || resultCode != RESULT_OK || data == null || web == null) return;
+        String cookie = data.getStringExtra(LoginWebActivity.EXTRA_COOKIE);
+        String storage = data.getStringExtra(LoginWebActivity.EXTRA_STORAGE);
+        if (cookie == null) cookie = "";
+        if (storage == null) storage = "{}";
+        String js = "window.__ckCookie&&window.__ckCookie("
+                + JSONObject.quote(cookie) + "," + JSONObject.quote(storage) + ")";
+        web.evaluateJavascript(js, null);
+    }
+
     /* ── 主题：面板改明暗 → 原生状态栏/导航栏同步 ─────────────────────── */
     private void applyTheme(boolean dark) {
         darkTheme = dark;
@@ -473,6 +494,25 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openExternal(String url) {
             if (url != null) ui.post(() -> MainActivity.this.openExternal(url));
+        }
+
+        /**
+         * 打开内嵌登录页抓 Cookie（签到中心「网页登录取 Cookie」按钮）。
+         * 只接受 http/https：目前站点都填的是网址，其它 scheme 没有可取 Cookie 的意义。
+         */
+        @JavascriptInterface
+        public void openLogin(String url) {
+            String u = url == null ? "" : url.trim();
+            if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                ui.post(() -> Toast.makeText(MainActivity.this,
+                        "先在上方填写站点网址（https:// 开头）", Toast.LENGTH_SHORT).show());
+                return;
+            }
+            ui.post(() -> {
+                Intent i = new Intent(MainActivity.this, LoginWebActivity.class);
+                i.putExtra(LoginWebActivity.EXTRA_URL, u);
+                startActivityForResult(i, REQ_LOGIN);
+            });
         }
 
         @JavascriptInterface

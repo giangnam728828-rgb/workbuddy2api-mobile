@@ -21,7 +21,7 @@ android {
         // （同版本号覆盖在原生 Android 上允许，但国产 ROM 常按「不大于已装版本」直接拦）。
         // CI 用 11300 + run_number 注入，保证每次构建都大于上一版；本地默认 11301。
         versionCode = (project.findProperty("wb2apiVersionCode") as String?)?.toIntOrNull() ?: 11301
-        versionName = (project.findProperty("wb2apiVersionName") as String?) ?: "1.13.1"
+        versionName = (project.findProperty("wb2apiVersionName") as String?) ?: "1.14.0"
 
         // Go 交叉编译产物按 ABI 放进 jniLibs：arm64 覆盖 99% 真机，
         // armeabi-v7a 兜底老设备，x86_64 给模拟器/少数平板。
