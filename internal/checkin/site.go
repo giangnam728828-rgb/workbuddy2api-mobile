@@ -241,7 +241,7 @@ func applyInputWith(s *Site, in Input, creating, needSecret bool) error {
 	if in.Token != nil {
 		s.Token = strings.TrimSpace(*in.Token)
 	}
-	if s.Cookie == "" && s.Token == "" {
+	if needSecret && s.Cookie == "" && s.Token == "" {
 		return errors.New("Cookie 和 Token 至少填一个（多数站点填 Cookie 就行）")
 	}
 

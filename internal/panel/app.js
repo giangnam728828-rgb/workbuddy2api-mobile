@@ -1857,6 +1857,10 @@ window.__ckCookie = function (cookie, storage) {
 function ckFormInput() {
   const tpl = $('ckType').value === 'template';
   return {
+    // id 只在编辑态带：后端「测试」据此复用已保存的 Cookie/Token。
+    // 表单不回显机密，编辑时留空 = 不修改；不带 id 的话测试会拿空凭证跑出 401，
+    // 看起来像「站点坏了」。
+    id: ckEditingId || '',
     name: $('ckName').value.trim(),
     url: $('ckURL').value.trim(),
     type: $('ckType').value,

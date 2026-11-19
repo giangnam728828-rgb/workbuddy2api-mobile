@@ -19,8 +19,11 @@ type Service struct {
 	// 单站签到不占这把锁（补签一个站点不该被别人的全量卡死）。
 	runMu sync.Mutex
 
-	// autoRunning 防止自动循环重入（循环本身串行，这里只是兜底）。
-	autoRunning bool
+	// running 是「有一轮全量在跑」的只读快照，供 Snapshot 与 isBusy 使用。
+	// 不能用 runMu.TryLock() 现场试探：试探成功的那一瞬间是真实持锁的，
+	// 并发的 RunAll 会拿到 ErrBusy 而被误报 409（面板显示「正在签到中」，
+	// 实际上没人在跑）。
+	running atomic.Bool
 }
 
 // NewService 打开（或创建）站点库。path 一般是 data/checkin-sites.json。
@@ -239,6 +242,7 @@ func buildSiteView(site Site, trimHistory bool) SiteView {
 
 // cookieTail Cookie 提示只露末 4 位。取最后一个 name=value 的 value 尾部：
 // 直接切原串会带上 "=" / ";"（"session=abcd" → "=abcd"），对辨认站点没帮助。
+// cookieTail 取 Cookie 末段的有效值（"a=1; session=xyz" → "xyz"），只露末 4 位。
 func cookieTail(cookie string) string {
 	last := cookie
 	if i := strings.LastIndex(last, ";"); i >= 0 {
@@ -251,6 +255,11 @@ func cookieTail(cookie string) string {
 	}
 	if last == "" {
 		last = cookie
+	}
+	// 末段本身不超过 4 个字符时，tailRunes 会把整段原样返回——对 "abc" 这种
+	// 短凭证等于把机密完整回显给前端。这种长度没有「末 4 位」可言，直接全遮。
+	if len([]rune(last)) <= 4 {
+		return "****"
 	}
 	return tailRunes(last, 4)
 }
@@ -323,11 +332,21 @@ func (s *Service) snapshotAll() Snapshot { return s.Snapshot() }
 // Test 试运行一份配置：不落库、不写历史。表单里「测试」按钮用。
 func (s *Service) Test(ctx context.Context, in Input) (Result, error) {
 	var site Site
-	if err := applyInput(&site, in, true); err != nil {
+	if err := applyInputWith(&site, in, true, false); err != nil {
 		return Result{}, err
 	}
-	// 测试时 Cookie/Token 可能为空（用户还没填就想先看看接口通不通），
-	// 允许跑：多数站会回 401，正好当作「凭证没填」的提示。
+	// 编辑弹层不回显机密：用户只改备注就点「测试」时前端不会带 Cookie。
+	// 此时沿用该站点已保存的凭证，否则测试必定 401，看起来像「站点坏了」。
+	if in.ID != "" {
+		if old, ok := s.store.get(in.ID); ok {
+			if site.Cookie == "" {
+				site.Cookie = old.Cookie
+			}
+			if site.Token == "" {
+				site.Token = old.Token
+			}
+		}
+	}
 	st, _, _ := s.store.snapshot()
 	res := s.runner.Run(ctx, site, st)
 	// 测试结果不入库，但日志里留一行（不带任何机密）。

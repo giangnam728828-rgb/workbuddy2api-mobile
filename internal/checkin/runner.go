@@ -433,7 +433,15 @@ func judgeJSONPath(raw []byte, path string) (bool, string) {
 	return false, emptyAs(msg, "字段 "+path+" 的值无法判断")
 }
 
+// drainLimit 截断后最多再排空多少字节。加大这个数只为让连接能被复用，
+// 不值得为一个恶意大响应无限读下去。
+const drainLimit = 1 << 20
+
 // readBody 读取响应体，超上限截断（不报错：签到响应不会那么大，截断只为兜底）。
+//
+// 截断时顺手把剩余部分读进 Discard：http.Response.Body 没读到底就 Close，
+// 连接会被直接丢弃而进不了空闲池——auto 模式一次要连试多个端点，
+// 每条都重新 TCP+TLS 握手的话，弱网手机上「一键签到」会明显变慢。
 func readBody(body io.ReadCloser) ([]byte, bool) {
 	if body == nil {
 		return nil, false
@@ -443,6 +451,7 @@ func readBody(body io.ReadCloser) ([]byte, bool) {
 		return raw, false
 	}
 	if len(raw) > maxBody {
+		_, _ = io.Copy(io.Discard, io.LimitReader(body, drainLimit))
 		return raw[:maxBody], true
 	}
 	return raw, false
