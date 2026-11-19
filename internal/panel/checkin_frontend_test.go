@@ -103,8 +103,14 @@ func TestCheckinFrontendSyntax(t *testing.T) {
 // 默认视图 = 签到中心：无 hash 打开时进 checkin（与 mobile.js 底栏第一项一致）。
 func TestCheckinDefaultView(t *testing.T) {
 	app := string(appJS)
-	if !strings.Contains(app, "go(hash in TITLES ? hash : 'checkin')") {
+	// 默认视图是签到中心。断言拆成两段而不是整句：这一行改过（现在先算 v 再 go，
+	// 顺便把 hash 写回去——底栏与返回键都按 hash 判断当前页），整句断言会跟着代码
+	// 写法漂移，而「默认 checkin」这个行为本身才是要钉住的。
+	if !strings.Contains(app, "hash in TITLES ? hash : 'checkin'") {
 		t.Error("app.js 默认视图应为签到中心")
+	}
+	if !strings.Contains(app, "if (location.hash !== '#' + v) history.replaceState") {
+		t.Error("首次进入应把视图写回 hash（底栏高亮与返回键都依赖它）")
 	}
 	if os.Getenv("CI") == "" {
 		t.Log("提示：完整冒烟由 TestAppJSTopLevelSmoke 覆盖（含 #checkin hash）")
