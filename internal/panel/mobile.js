@@ -39,7 +39,13 @@ if (navBtn) navBtn.addEventListener('click', drawerToggle);          // 汉堡�
 if (navVeil) navVeil.addEventListener('click', drawerClose);         // 点遮罩关
 // 点导航项关：事件委托，不去改上方既有的 go() 绑定
 if (navDrawer) navDrawer.addEventListener('click', ev => { if (ev.target.closest('a')) drawerClose(); });
-addEventListener('keydown', ev => { if (ev.key === 'Escape') drawerClose(); }); // ESC 关
+addEventListener('keydown', ev => {
+  if (ev.key !== 'Escape') return;
+  // 先关弹层再关抽屉：桌面键盘用户开着签到弹层按 ESC 原先毫无反应。
+  // 复用 __wbBack 的既有链路（它已经知道每个 veil 该调哪个 closer）。
+  if (typeof window.__wbBack === 'function' && window.__wbBack()) return;
+  drawerClose();
+}); // ESC：弹层 → 抽屉
 // 转回 >760px 自动复位：matchMedia 的 change 在跨过断点时触发，resize 兜底
 function drawerResetIfWide() { if (!MOBILE_MQ.matches) drawerClose(); }
 if (MOBILE_MQ.addEventListener) MOBILE_MQ.addEventListener('change', drawerResetIfWide);

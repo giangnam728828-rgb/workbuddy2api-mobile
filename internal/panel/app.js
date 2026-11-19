@@ -1564,6 +1564,7 @@ let ckLoading = false;       // 快照在途（防 5s 轮询叠加）
 let ckEditingId = null;      // null = 新增；否则 = 编辑中的站点 id
 let ckCookieDirty = false;   // Cookie/Token 输入框是否被用户（或原生回调）改过：
 let ckTokenDirty = false;    // 没改过就提交 null，后端保留原值
+let ckSetDirty = false;      // 自动签到设置是否被用户改过（挡住 5s 轮询回写）
 let ckRunningAll = false;
 
 /* loadCheckin 拉快照并渲染。quiet = 轮询静默刷（不摆骨架、不抢错误提示）。 */
@@ -1607,6 +1608,8 @@ function renderCheckin() {
   $('ckRing').style.setProperty('--p', en ? Math.round(ok / en * 100) : 0);
   $('ckRingOk').textContent = String(ok);
   $('ckRingAll').textContent = String(en);
+  // role="img" 会吞掉子节点文本，数字必须写进 aria-label，否则读屏永远只说「今日签到进度」。
+  $('ckRing').setAttribute('aria-label', '今日签到进度 ' + ok + ' / ' + en);
   let sub;
   if (!d.sites || !d.sites.length) sub = '还没有站点，点下方「添加站点」开始';
   else if (sum.fail_today) sub = sum.fail_today + ' 个站点签到失败，点卡片看原因';
@@ -1614,8 +1617,11 @@ function renderCheckin() {
   else sub = '今日已全部签完';
   const next = fmtCkNext(d.next_run_at, st.enabled);
   $('ckSub').textContent = sub + (next && d.sites.length ? ' · ' + next : '');
-  $('ckEnabled').checked = !!st.enabled;
-  $('ckRunAt').value = st.run_at || '08:05';
+  // 用户改过且还没保存时不要回写：否则开关会在 5 秒内自己弹回去。
+  if (!ckSetDirty) {
+    $('ckEnabled').checked = !!st.enabled;
+    $('ckRunAt').value = st.run_at || '08:05';
+  }
   $('ckList').innerHTML = (d.sites || []).map(ckCardHtml).join('');
   $('ckEmpty').hidden = !!(d.sites && d.sites.length);
   $('btnCkAdd').hidden = !(d.sites && d.sites.length);
@@ -1625,13 +1631,15 @@ function renderCheckin() {
 /* ckCardHtml 单张站点卡。状态徽标 + 最近结果 + 操作按钮；失败原因可点开看全文与历史。 */
 function ckCardHtml(s) {
   const last = s.last || {};
-  const tags = {
-    ok: '<span class="tag ok">今日已签</span>',
-    fail: '<span class="tag bad">今日失败</span>',
-    off: '<span class="tag">已停用</span>',
-    pending: '<span class="tag warn">待签到</span>'
-  };
-  const badge = tags[s.today] || tags.pending;
+  // 用 Map 而不是对象字面量查表：today 若为 "constructor"/"__proto__" 时
+  // obj[k] 会取到非字符串并直接拼进 HTML。
+  const tags = new Map([
+    ['ok', '<span class="tag ok">今日已签</span>'],
+    ['fail', '<span class="tag bad">今日失败</span>'],
+    ['off', '<span class="tag">已停用</span>'],
+    ['pending', '<span class="tag warn">待签到</span>'],
+  ]);
+  const badge = tags.get(s.today) || tags.get('pending');
   const meta = [s.type === 'auto' ? '自动识别' : '自定义模板',
                 s.cookie_set ? 'Cookie' : null, s.token_set ? 'Token' : null].filter(Boolean).join(' · ');
   const msg = last.message || (s.today === 'pending' ? '今天还没签到' : (s.today === 'off' ? '站点已停用' : ''));
@@ -1640,7 +1648,7 @@ function ckCardHtml(s) {
   if (last.days) extras.push('连签 ' + last.days + ' 天');
   if (last.reward) extras.push(last.reward);
   const when = last.at
-    ? ago(last.at) + (last.duration_ms ? ' · ' + last.duration_ms + 'ms' : '') + (extras.length ? ' · ' + esc(extras.join(' · ')) : '')
+    ? ago(last.at) + (last.duration_ms ? ' · ' + esc(String(last.duration_ms)) + 'ms' : '') + (extras.length ? ' · ' + esc(extras.join(' · ')) : '')
     : '还没签过';
   const hist = (s.history || []).slice(0, 10).map(h =>
     '<div class="ck-hist-row"><span class="' + (h.ok ? 'h-ok' : 'h-bad') + '">' + (h.ok ? '✓' : '✗') + '</span>' +
@@ -1648,8 +1656,10 @@ function ckCardHtml(s) {
   ).join('');
   return '<div class="ck-card' + (s.enabled ? '' : ' off') + '" data-id="' + esc(s.id) + '">' +
     '<div class="ck-row"><div class="ck-name">' + esc(s.name) + badge + '</div>' +
-    '<label class="ck-switch" title="' + (s.enabled ? '停用' : '启用') + '">' +
-    '<input type="checkbox" data-act="toggle" data-id="' + esc(s.id) + '"' + (s.enabled ? ' checked' : '') + '><i></i></label></div>' +
+    '<label class="ck-switch">' +
+    '<input type="checkbox" data-act="toggle" data-id="' + esc(s.id) + '"' +
+    ' aria-label="' + esc((s.enabled ? '停用 ' : '启用 ') + s.name) + '"' +
+    (s.enabled ? ' checked' : '') + '><i></i></label></div>' +
     '<div class="ck-host">' + esc(s.host || s.url) + (meta ? ' · ' + meta : '') + '</div>' +
     '<div class="ck-msg ' + msgCls + '" data-act="msg" data-id="' + esc(s.id) + '" title="点击展开/收起">' + esc(msg) + '</div>' +
     (hist ? '<div class="ck-hist" data-hist="' + esc(s.id) + '" hidden>' + hist + '</div>' : '') +
@@ -1670,12 +1680,12 @@ $('ckList').addEventListener('click', async ev => {
   if (act === 'edit' && site) { openCheckinEdit(site); return; }
   if (act === 'msg') {
     t.classList.toggle('open');
-    const hist = document.querySelector('[data-hist="' + id + '"]');
+    const hist = document.querySelector('[data-hist="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
     if (hist) hist.hidden = !t.classList.contains('open');
     return;
   }
   if (act === 'hist') {
-    const hist = document.querySelector('[data-hist="' + id + '"]');
+    const hist = document.querySelector('[data-hist="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
     if (!hist) { toast('还没有历史记录'); return; }
     hist.hidden = !hist.hidden;
     return;
@@ -1747,6 +1757,7 @@ $('btnCkSaveSet').addEventListener('click', async () => {
     const d = await api('checkin/settings', { method: 'POST', body });
     ckData.settings = d.settings;
     if (ckData) ckData.next_run_at = '';
+    ckSetDirty = false;
     toast('自动签到已保存（' + (d.settings.enabled ? '每天 ' + d.settings.run_at : '已暂停') + '）', 'ok');
     await loadCheckin({ quiet: true });
   } catch (e) {
@@ -1797,7 +1808,9 @@ function openCheckinEdit(site) {
   ckSyncTplGroup();
   $('ckTestRes').hidden = true;
   $('ckVeil').classList.add('on');
-  setTimeout(() => $('ckName').focus(), 60);
+  // 手机上打开弹层就聚焦输入框 = 立刻弹键盘，62vh 的表单只剩一个字段可见。
+  // 桌面（鼠标键盘）才自动聚焦第一个字段。
+  if (!matchMedia('(max-width: 760px)').matches) setTimeout(() => $('ckName').focus(), 60);
 }
 
 /* closeCheckinEdit 关弹层（返回键与 VEIL_CLOSER 都会调）。 */
@@ -1812,6 +1825,18 @@ $('ckType').addEventListener('change', ckSyncTplGroup);
 $('btnCkAdd').addEventListener('click', () => openCheckinEdit(null));
 $('btnCkAddEmpty').addEventListener('click', () => openCheckinEdit(null));
 $('btnCkClose').addEventListener('click', closeCheckinEdit);
+
+/* 手动输入也要置脏：只在原生回调里置脏的话，桌面/普通浏览器手动粘贴的 Cookie
+   会以 null 提交，后端按「留空 = 不修改」保留空值 —— 新建站直接失败（校验报
+   「至少填一个」），编辑站则是假成功（Cookie 根本没换）。 */
+$('ckCookie').addEventListener('input', () => { ckCookieDirty = true; });
+$('ckToken').addEventListener('input', () => { ckTokenDirty = true; });
+
+/* 设置控件脏标记：轮询每 5s 会重绘设置条，用户拨了开关还没点保存就被还原，
+   再点保存写回的是还原后的值。有改动就暂停回写，保存成功后清零。 */
+$('ckEnabled').addEventListener('change', () => { ckSetDirty = true; });
+$('ckRunAt').addEventListener('input', () => { ckSetDirty = true; });
+$('ckRunAt').addEventListener('change', () => { ckSetDirty = true; });
 
 /* 网页登录取 Cookie：App 内打开站点登录页，完成后由原生回调 __ckCookie 带回。 */
 $('btnCkLogin').addEventListener('click', () => {
@@ -1864,8 +1889,10 @@ function ckFormInput() {
     name: $('ckName').value.trim(),
     url: $('ckURL').value.trim(),
     type: $('ckType').value,
-    cookie: ckCookieDirty ? $('ckCookie').value.trim() : null,
-    token: ckTokenDirty ? $('ckToken').value.trim() : null,
+    // 新建：直接提交输入框内容（空串 = 没填，交给后端校验）。
+    // 编辑：没改过才提交 null（保留原值），改过就提交新值（含显式清空）。
+    cookie: ckCookieDirty ? $('ckCookie').value.trim() : (ckEditingId ? null : $('ckCookie').value.trim()),
+    token: ckTokenDirty ? $('ckToken').value.trim() : (ckEditingId ? null : $('ckToken').value.trim()),
     method: tpl ? $('ckMethod').value : '',
     path: tpl ? $('ckPath').value.trim() : '',
     headers: tpl ? parseHeaderLines($('ckHeaders').value) : null,
@@ -1879,6 +1906,9 @@ function ckFormInput() {
 
 /* 保存（新增与编辑同一条路径）。 */
 $('btnCkSave').addEventListener('click', async () => {
+  const b = $('btnCkSave');
+  if (b.disabled) return;                 // 双击会建两个同名站点
+  b.disabled = true;
   const body = JSON.stringify(ckFormInput());
   const url = ckEditingId ? 'checkin/sites/' + ckEditingId : 'checkin/sites';
   try {
@@ -1888,6 +1918,8 @@ $('btnCkSave').addEventListener('click', async () => {
     await loadCheckin();
   } catch (e) {
     toast('保存失败：' + e.message, 'err');
+  } finally {
+    b.disabled = false;
   }
 });
 

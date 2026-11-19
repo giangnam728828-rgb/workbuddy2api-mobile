@@ -50,7 +50,9 @@ body {
 .brand { padding: 20px 18px 16px; border-bottom: 1px solid var(--line-soft); }
 .brand .name { font-weight: 650; letter-spacing: -.01em; font-size: 15px; }
 .brand .sub { color: var(--ink-3); font-size: 11.5px; font-family: var(--mono); margin-top: 3px; }
-.nav ul { list-style: none; padding: 10px 8px; flex: 1; }
+.nav ul { list-style: none; padding: 10px 8px; flex: 1; overflow-y: auto; }
+/* 导航从 7 项变 8 项（新增签到中心）：矮窗口下品牌+列表+状态区会超出 100vh，
+   列表可滚才不至于把最下面一项裁掉且拖不出来。 */
 .nav a {
   display: flex; align-items: center; gap: 10px; padding: 8px 11px; margin-bottom: 2px;
   color: var(--ink-2); text-decoration: none; border-radius: 7px; font-size: 13.5px;
@@ -614,14 +616,20 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   .ck-ring {
     --p: 0;
     width: 72px; height: 72px; flex: none; border-radius: 50%;
-    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line-soft) 0);
+    /* 轨道用 --accent-soft 而不是 --line-soft：后者在深色下比空洞还深、浅色下贴白底，
+       0 进度时整环会「消失」（实测对比度 1.03 / 1.16）。 */
+    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--accent-soft) 0);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     position: relative; font-variant-numeric: tabular-nums;
   }
-  .ck-ring::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--raise); }
+  /* 空洞描边：浅色主题 --raise 与卡片 --surface 同为 #ffffff，没有描边就看不出环形。 */
+  .ck-ring::before {
+    content: ""; position: absolute; inset: 6px; border-radius: 50%;
+    background: var(--raise); box-shadow: inset 0 0 0 1px var(--line);
+  }
   .ck-ring b, .ck-ring i { position: relative; font-style: normal; line-height: 1.1; }
   .ck-ring b { font-size: 20px; font-weight: 650; }
-  .ck-ring i { color: var(--ink-3); font-size: 11px; }
+  .ck-ring i { color: var(--ink-2); font-size: 11px; }
   .ck-top-main { min-width: 0; flex: 1; }
   .ck-title { font-size: 15.5px; font-weight: 620; letter-spacing: -.01em; }
   .ck-sub { color: var(--ink-2); font-size: 12.5px; margin-top: 3px; min-width: 0; overflow-wrap: anywhere; }
@@ -632,6 +640,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   .ck-bar .note { white-space: nowrap; }
   @media (prefers-reduced-motion: reduce) { .ck-bar i { animation: none; } }
   .ck-settings header { flex-wrap: wrap; gap: 8px 10px; }
+  .ck-settings header h3 { white-space: normal; }
   .ck-settings input[type="time"] {
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
     color: var(--ink); padding: 5px 9px; font: 550 13px var(--mono);
@@ -696,7 +705,10 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     color: var(--ink-2); min-width: 0; }
   .ck-form label b { font-weight: 600; color: var(--ink); }
   .ck-form label .op { color: var(--ink-3); font-weight: 400; }
-  .ck-login-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* 选择器带上 .ck-form：.ck-form label 的特异性 (0,1,1) 高于 .ck-login-row (0,1,0)，
+     不加限定会被压成 flex-direction: column（Cookie 行竖排三行）。 */
+  .ck-form label.ck-login-row, .ck-login-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ck-form label.ck-login-row { flex-direction: row; }
   .ck-login-row .hint { flex: 1; min-width: 0; }
 </style>
 <!-- 移动端适配：独立文件，必须在主 <style> 之后（@media 覆盖依赖层叠顺序） -->
@@ -860,7 +872,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         <header>
           <h3>自动签到<span class="hint">每天到点自动执行 · 手机锁屏也照跑（网关常驻前台服务）</span></h3>
           <span class="grow"></span>
-          <label class="ck-switch"><input type="checkbox" id="ckEnabled"><i></i></label>
+          <label class="ck-switch"><input type="checkbox" id="ckEnabled" aria-label="自动签到"><i></i></label>
           <input type="time" id="ckRunAt" value="08:05" aria-label="自动签到时间">
           <button class="xs" id="btnCkSaveSet">保存</button>
         </header>
@@ -1513,7 +1525,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
 <!-- 签到中心：添加/编辑站点。Cookie/Token 不回显（只存服务端）；
      「网页登录取 Cookie」在 App 内打开站点登录页自动抓取（桌面/普通浏览器回退为手动粘贴）。 -->
 <div class="veil" id="ckVeil">
-  <div class="dlg" style="width:640px">
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="ckDlgTitle" style="width:640px">
     <header>
       <h3 id="ckDlgTitle">添加站点</h3>
       <div class="hint">填网址 + Cookie 就能签（自动识别 new-api 系接口）；接口不一样的站切「自定义模板」。</div>

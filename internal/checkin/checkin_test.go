@@ -519,12 +519,20 @@ func TestServiceRunAllBusyMutex(t *testing.T) {
 		<-release
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 	})
-	go svc.RunAll(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, _ = svc.RunAll(context.Background())
+	}()
 	<-started
 	if _, _, err := svc.RunAll(context.Background()); err != ErrBusy {
 		t.Fatalf("并发全量应返回 ErrBusy，实际 %v", err)
 	}
 	close(release)
+	// 必须等后台那一轮真正结束再返回：它对 TempDir 里的 checkin-sites.json 落盘，
+	// 提前返回会让 t.TempDir 的清理和 rename 撞车（-count 一多就偶发
+	// "directory not empty" / "no such file or directory"）。
+	<-done
 }
 
 func TestServiceTestDoesNotPersist(t *testing.T) {
